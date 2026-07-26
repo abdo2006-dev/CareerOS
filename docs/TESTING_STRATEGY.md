@@ -34,6 +34,29 @@ RLS isolation, and version-history integrity.
   policies — a migration that changes RLS policies without an accompanying test update should be
   treated as incomplete.
 
+**Implemented as of Phase 0** — two layers, both exercising the real local Postgres instance, never
+mocked:
+
+1. **pgTAP**, under `supabase/tests/database/*.test.sql`, run via `supabase test db`. Chosen over
+   hand-rolled SQL scripts because it ships inside the Supabase-provided Postgres image (no new
+   host dependency beyond what local development already requires) and gives structured,
+   TAP-formatted pass/fail output. Fixture users are inserted directly into `auth.users` and the
+   whole file runs inside one transaction that's rolled back at the end (`BEGIN; ... ROLLBACK;`),
+   so nothing persists — see `000_structure.test.sql` (tables, columns, keys, constraints, RLS
+   enabled, exact policy sets, exact grant sets, `anon` has zero grants), `010_profiles_rls.test.sql`,
+   and `020_education_entries_rls.test.sql` (owner CRUD, cross-user isolation, the specific
+   foreign-key-bypass and ownership-rewrite-by-rewriting-`user_id` cases, anonymous rejection via
+   `throws_ok(..., '42501'::char(5), null, ...)` — matching by SQLSTATE only, not exact message
+   text — and the deliberate `service_role` bypass).
+2. **A real API-path integration test**, `supabase/scripts/api-integration-test.mjs`, exercising
+   Auth → JWT → PostgREST → RLS → Postgres over real HTTP: it creates two temporary users through
+   the trusted Admin API, signs each in through the actual password-grant endpoint, and issues
+   real REST requests with their real JWTs. This is deliberately separate from both pgTAP (which
+   tests the database layer directly, not the HTTP/auth path in front of it) and the mocked
+   frontend component tests below (which are fast and hermetic but don't touch the real network).
+   Temporary users and their data are always deleted in a `finally` block, even if an assertion
+   fails partway through. Refuses to run against anything but a loopback URL.
+
 ## 3. Scoring pipeline testing
 
 - **Unit tests per sub-score function** (skill alignment, project evidence, eligibility rules,
@@ -115,6 +138,14 @@ Standard practice, not elaborated at length here: component tests for the fit-ex
 (does it render the evidence it's given, not just the score), and integration tests for the
 core workflows in [USER_WORKFLOWS.md](USER_WORKFLOWS.md) using a local Supabase instance
 seeded with fixture data.
+
+**Implemented as of Phase 0**: Vitest + Testing Library, under `app/src/**/*.test.tsx`, mocking
+`app/src/lib/supabaseClient.ts` per file for speed and determinism (per §2's note above, the real,
+unmocked API path is exercised separately by the integration script, not by these component
+tests). Covers the loading/error/empty/authenticated/unauthenticated states required by the
+minimal profile vertical slice: `App.test.tsx` (auth-state gating between the sign-in and profile
+screens), `SignInPage.test.tsx` (submits credentials, surfaces a sign-in error), and
+`ProfilePage.test.tsx` (loading, error, empty-profile, loaded-and-editable, and sign-out states).
 
 ## 8. What "done" means for a test claim
 

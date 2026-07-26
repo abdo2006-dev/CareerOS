@@ -1,23 +1,38 @@
 # Development Roadmap
 
-Status: **proposal**. Phases are sequenced by dependency (what must exist before the next phase is
-useful), not by calendar date — no phase begins until this documentation set is reviewed and
-approved, per the project's stated process.
+Status: **proposal** for Phases 1 onward; Phase 0 is implemented (see below). Phases are
+sequenced by dependency (what must exist before the next phase is useful), not by calendar date —
+no phase begins until it has been explicitly reviewed and approved, per the project's stated
+process.
 
-## Phase 0 — Foundations (no user-facing features yet)
+## Phase 0 — Foundations (no user-facing features yet) — **done**
 
-- Repository scaffolding matching [ARCHITECTURE.md](ARCHITECTURE.md)'s layout.
-- Supabase project provisioned; initial schema migration for the profile domain and auth wired up.
-- RLS policies for every user-owned table, with the RLS tests from
+- Repository scaffolding matching [ARCHITECTURE.md](ARCHITECTURE.md)'s layout: `app/` (React +
+  TypeScript + Vite), `supabase/` (config, migrations, pgTAP tests, local-only scripts),
+  `ingestion/` left as a placeholder, `.github/workflows/ci.yml`.
+- Local Supabase CLI stack (Colima + Docker); initial migration for the profile domain
+  (`profiles` + `education_entries` only — a deliberate two-table vertical slice, not the full
+  eight-table profile domain originally listed for evaluation; see
+  [DATA_MODEL.md](DATA_MODEL.md) for why the remaining six tables are deferred to Phase 1) and
+  password-based auth wired up.
+- Explicit grants (revoke-then-grant, not relying on Supabase's defaults) and RLS policies for
+  both tables, with the pgTAP + real API-path integration tests from
   [TESTING_STRATEGY.md](TESTING_STRATEGY.md) passing before anything else is built on top.
-- CI running lint/tests on push.
+- CI running lint/types/tests/build (frontend) and migrations/RLS/API-integration (database) on
+  every push/PR.
 
-**Exit condition**: a user can sign in and RLS is verifiably correct. No opportunity data yet.
+**Exit condition, met**: a user can sign in with email/password, load their own profile, edit and
+save it (RLS-permitted), sign out — verified both by automated tests and by hand in a real
+browser against the real local stack. No opportunity data yet.
 
 ## Phase 1 — Profile
 
 - Resume upload → Storage → scheduled parsing job → draft profile → manual review/correction UI.
-- Full profile CRUD (education, skills, projects, languages, preferences).
+- Full profile CRUD: add `work_experience`, `projects`, `skills_catalog`, `user_skills`,
+  `user_languages`, `preferences` (all deferred from Phase 0 — see
+  [DATA_MODEL.md](DATA_MODEL.md)), plus the fuller `profiles`/`education_entries` field sets
+  (`work_eligibility`, `expected_graduation`, `source` provenance) not needed to prove Phase 0's
+  RLS pattern.
 - The resume-parsing job implements the atomic-claim and lease-timeout pattern from
   [DATA_FLOW.md](DATA_FLOW.md#2-resume-upload-and-profile-extraction-flow) from the start, and the
   UI ships with explicit `pending` / `processing` / `completed` / `failed` states — this is not a
