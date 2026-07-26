@@ -7,14 +7,53 @@ Status: **proposal**, consistent with [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 At MVP scale (one user, one maintainer), two environments are enough:
 
-- **Local development**: frontend via Vite dev server against a Supabase project (either a free
-  second "dev" Supabase project or the same project with clear discipline about test data —
-  decision deferred to implementation start, see [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)); Python
-  ingestion/scoring run locally against the same dev database for adapter development.
-- **Production**: the live single-user system.
+- **Local development** (implemented as of Phase 0): frontend via Vite dev server against a fully
+  local Supabase CLI stack — Postgres, Auth, PostgREST, Studio — running in Docker containers.
+  **No hosted Supabase project exists for development.** There is no second "dev" hosted project
+  either, and no Supabase Branching (an unnecessary cost/complexity for a $0, single-maintainer
+  workflow) — this resolves the open question the original planning pass deferred. Exactly one
+  hosted Supabase project is reserved for later, for production only, and is not created yet.
+- **Production**: the live single-user system, on a hosted Supabase project created later.
 
 A third "staging" environment is not justified yet — reconsider if a second real user is ever
 onboarded before a broader public launch.
+
+### Local environment — implementation details (Phase 0)
+
+- **Container runtime**: Colima (Docker CLI + Colima via Homebrew), not Docker Desktop — the
+  lightweight open-source combination, chosen per explicit instruction. Started with
+  `colima start --cpu 4 --memory 4 --disk 60` (out of this machine's 10 CPUs / 16 GiB / 461 GiB
+  free — a conservative fraction, not "nearly all system resources").
+- **A real networking issue was found and fixed, not assumed away**: Colima's default port
+  forwarder mirrors a container's bind address to the host — since Supabase's local containers
+  publish on `0.0.0.0` (confirmed via `docker ps`), Colima's default forwarding also bound
+  `0.0.0.0` on the Mac's real network interfaces, making the local stack reachable from any other
+  device on the same LAN (confirmed with a real cross-device connectivity test, not assumed).
+  Setting Docker's own `daemon.json` `"ip": "127.0.0.1"` default did **not** fix this, because
+  Supabase's containers specify their host bind explicitly. The actual fix: `portForwarder: none`
+  in Colima's config (disabling its automatic forwarder entirely) plus explicit, loopback-only SSH
+  local-forwards opened by `supabase/scripts/dev-tunnel.sh` (and closed by
+  `supabase/scripts/dev-tunnel-stop.sh`) for exactly the four ports CareerOS needs. Verified: the
+  local stack is unreachable from the LAN and reachable from `127.0.0.1`. This is a real,
+  non-obvious local-only quirk worth understanding before assuming "Colima just works like Docker
+  Desktop" — it doesn't, by default.
+- **Supabase CLI**: installed via `brew install supabase/tap/supabase`. **Exact version pinned
+  everywhere it matters**: `2.109.1`, matching what CI installs via `supabase/setup-cli@v3`'s
+  `version:` input — never `latest`, so a CLI update can't silently change local or CI behavior.
+- **Public signup is disabled** even locally (`enable_signup = false` in `supabase/config.toml`,
+  at the top `[auth]` level). Local development/fixture accounts are created exclusively via the
+  Admin API (`supabase/scripts/setup-local-users.mjs`), using the local secret key, never through
+  the signup endpoint. One real, non-obvious finding worth recording: `[auth.email].enable_signup`
+  turned out to also gate the email/password *provider* as a whole — including password-grant
+  **sign-in** for already-confirmed users, not just the signup endpoint. Disabling it broke login
+  entirely ("Email logins are disabled"), confirmed against the running stack; it is left `true`,
+  while the top-level `[auth].enable_signup = false` is what actually blocks public self-service
+  signup.
+- **Migrations are the sole source of truth for schema.** `supabase/migrations/*.sql` are applied
+  with `supabase db reset` (drops and recreates the local database from empty, replaying every
+  migration) — this is also exactly what CI does, so "works locally" and "works in CI" mean the
+  same thing. No manual schema edits in local Studio, ever, and the same discipline carries over
+  to the future hosted dashboard.
 
 ## 2. Frontend deployment
 

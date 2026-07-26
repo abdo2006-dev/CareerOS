@@ -25,9 +25,11 @@ phase that needs it.
 
 ## Architecture
 
-- **Local/dev Supabase project strategy**: a second free Supabase project for development, versus
-  disciplined use of one project — affects [DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md) and
-  isn't resolved here.
+- ~~**Local/dev Supabase project strategy**~~ — **resolved in Phase 0**: no hosted Supabase
+  project exists for development at all; a fully local Supabase CLI stack (Colima + Docker) is
+  used instead, with migrations as the sole source of truth. No second hosted "dev" project, no
+  Supabase Branching. Exactly one hosted project is reserved for production only, created later.
+  See [DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md).
 - **Resume-parsing method**: the brief doesn't specify whether extraction should use a
   traditional NLP/rules pipeline (spaCy, regex-based section detection) or an LLM call. Given the
   project's deterministic-before-LLM preference, a rules-first approach with LLM assistance only

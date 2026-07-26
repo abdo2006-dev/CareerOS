@@ -167,23 +167,40 @@ tier) as the first place such logic would go, with a move to a small containeriz
 (execution time, language) don't fit. This is discussed, not built — see
 [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md).
 
-## 3. Repository layout (proposal)
+## 3. Repository layout (Phase 0: implemented as shown)
 
 ```
 careeros/
-  app/            React + TypeScript + Vite frontend
+  app/            React + TypeScript + Vite frontend (implemented, Phase 0)
   ingestion/      Python: source adapters, normalization, scoring, resume parsing
-    adapters/     one module per source, implementing the common adapter interface
-    scoring/      deterministic scoring pipeline
-    parsing/      resume extraction
-  supabase/       SQL migrations, RLS policies, (later) edge functions
+                  (placeholder only -- no code yet, see ingestion/README.md; Phase 2+)
+  supabase/       config.toml, migrations/, tests/database/ (pgTAP), scripts/ (local-only
+                  dev tooling) -- implemented, Phase 0
   docs/           this documentation set
-  .github/workflows/   GitHub Actions schedules for ingestion/parsing/scoring
+  .github/workflows/   ci.yml (Phase 0); ingestion/parsing/scoring schedules are Phase 2+
 ```
 
 A monorepo, not separate repositories, because the frontend, database schema, and ingestion
 pipeline change together constantly at this project's size, and a single maintainer gains nothing
 from cross-repo versioning overhead.
+
+### Local development environment (Phase 0, implemented)
+
+The local/dev-environment question in the original planning pass is now resolved and exercised,
+not just decided on paper:
+
+- **Container runtime**: Colima (Docker CLI + Colima, via Homebrew) — not Docker Desktop. Chosen
+  as the lightweight open-source option; see [DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md) for
+  the exact version and a real networking issue this surfaced (Colima's default port forwarder
+  exposed the local stack to the LAN, not just localhost — fixed, documented, and worth reading
+  before assuming "it just works").
+- **Supabase CLI**, pinned to an exact version everywhere (locally and in CI) — never `latest`.
+  Local Postgres/Auth/Storage/PostgREST run as Docker containers this CLI orchestrates.
+- **Migrations are the sole source of truth** for schema, per [AGENTS.md](../AGENTS.md) — no
+  manual edits in Supabase Studio (local) or a hosted dashboard (later), ever.
+- **No hosted Supabase project exists yet**, and Phase 0 does not create one. No second hosted
+  "dev" project either, and no Supabase Branching (unneeded complexity/cost for a $0, single-
+  maintainer workflow). Exactly one hosted project is reserved for later production use only.
 
 ## 4. Alternatives considered
 
