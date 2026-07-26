@@ -1,6 +1,8 @@
 # ADR-001: Database Selection
 
-**Status**: Proposed
+**Status**: Accepted — implemented and tested in Phase 0: Postgres runs locally via the Supabase
+CLI with a real migration (`profiles` + `education_entries`), explicit grants, RLS policies, and a
+passing pgTAP + API-path integration test suite (see [TESTING_STRATEGY.md](../TESTING_STRATEGY.md)).
 
 ## Context
 
