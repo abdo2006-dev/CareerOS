@@ -31,16 +31,17 @@ of which this MVP has.
 - **Paying a small amount from the start** to sidestep free-tier fragility (e.g., Supabase's
   paused-project behavior): rejected as the default per explicit project instruction, but not
   hidden — [COST_MODEL.md](../COST_MODEL.md) documents exactly which fragilities this choice
-  accepts (the Supabase pause risk, GitHub Actions private-repo minute limits) so the tradeoff is
-  visible rather than silently absorbed.
+  accepts (the Supabase pause risk) so the tradeoff is visible rather than silently absorbed.
 
 ## Consequences
 
 - Every provider choice in [ARCHITECTURE.md](../ARCHITECTURE.md) is anchored to this ADR's
   constraint; a future change that introduces a recurring cost must update this ADR (or supersede
   it) and be flagged to the user explicitly, per [AGENTS.md](../../AGENTS.md).
-- Some free-tier fragilities (Supabase pausing, GitHub Actions minute limits on a private repo) are
-  knowingly accepted rather than engineered away, and must be actively monitored (see
-  [OBSERVABILITY.md](../OBSERVABILITY.md)) rather than assumed solved.
+- Some free-tier fragilities (Supabase pausing) are knowingly accepted rather than engineered
+  away, and must be actively monitored (see [OBSERVABILITY.md](../OBSERVABILITY.md)) rather than
+  assumed solved. The repository being public removes one fragility rather than adding one:
+  standard GitHub Actions runner minutes are free and unlimited here, unlike on a private
+  repository's free plan (see [COST_MODEL.md](../COST_MODEL.md)).
 - The one plausible small cost (a custom domain) remains optional and cosmetic, not a functional
   requirement.

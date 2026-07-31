@@ -22,21 +22,23 @@ onboarded before a broader public launch.
 
 - **Container runtime**: Colima (Docker CLI + Colima via Homebrew), not Docker Desktop — the
   lightweight open-source combination, chosen per explicit instruction. Started with
-  `colima start --cpu 4 --memory 4 --disk 60` (out of this machine's 10 CPUs / 16 GiB / 461 GiB
-  free — a conservative fraction, not "nearly all system resources").
-- **A real networking issue was found and fixed, not assumed away**: Colima's default port
-  forwarder mirrors a container's bind address to the host — since Supabase's local containers
-  publish on `0.0.0.0` (confirmed via `docker ps`), Colima's default forwarding also bound
-  `0.0.0.0` on the Mac's real network interfaces, making the local stack reachable from any other
-  device on the same LAN (confirmed with a real cross-device connectivity test, not assumed).
-  Setting Docker's own `daemon.json` `"ip": "127.0.0.1"` default did **not** fix this, because
-  Supabase's containers specify their host bind explicitly. The actual fix: `portForwarder: none`
-  in Colima's config (disabling its automatic forwarder entirely) plus explicit, loopback-only SSH
-  local-forwards opened by `supabase/scripts/dev-tunnel.sh` (and closed by
-  `supabase/scripts/dev-tunnel-stop.sh`) for exactly the four ports CareerOS needs. Verified: the
-  local stack is unreachable from the LAN and reachable from `127.0.0.1`. This is a real,
-  non-obvious local-only quirk worth understanding before assuming "Colima just works like Docker
-  Desktop" — it doesn't, by default.
+  `colima start --cpu 4 --memory 4 --disk 60` — an example allocation only; adjust the
+  `--cpu`/`--memory`/`--disk` values to whatever your own machine can spare.
+- **A real networking issue was found and fixed, not assumed away, on the machine used for Phase 0
+  development**: Colima's default port forwarder mirrors a container's bind address to the host —
+  since Supabase's local containers publish on `0.0.0.0` (confirmed via `docker ps`), Colima's
+  default forwarding also bound `0.0.0.0` on that Mac's real network interfaces, making the local
+  stack reachable from any other device on the same LAN (confirmed with a real cross-device
+  connectivity test, not assumed). Setting Docker's own `daemon.json` `"ip": "127.0.0.1"` default
+  did **not** fix this, because Supabase's containers specify their host bind explicitly. The
+  actual fix: `portForwarder: none` in Colima's config (disabling its automatic forwarder
+  entirely) plus explicit, loopback-only SSH local-forwards opened by
+  `supabase/scripts/dev-tunnel.sh` (and closed by `supabase/scripts/dev-tunnel-stop.sh`) for
+  exactly the four ports CareerOS needs. Verified on that machine: the local stack is unreachable
+  from the LAN and reachable from `127.0.0.1`. This finding is reported as observed and
+  reproducible on that specific setup, not as a claim that every Colima installation or version
+  behaves identically — if you don't reproduce it on yours, the tunnel script is still the safe
+  default and costs nothing to keep using.
 - **Supabase CLI**: installed via `brew install supabase/tap/supabase`. **Exact version pinned
   everywhere it matters**: `2.109.1`, matching what CI installs via `supabase/setup-cli@v3`'s
   `version:` input — never `latest`, so a CLI update can't silently change local or CI behavior.
@@ -100,10 +102,12 @@ onboarded before a broader public launch.
   belongs to the synchronous Edge Function/worker layer reserved in
   [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md), introduced only once actually needed
   — not to GitHub Actions.
-- **GitHub Actions minute usage for private repositories must be checked against the account's
-  actual current plan and allowance** (in GitHub's billing/usage settings) before the ingestion
-  cadence is finalized — see [COST_MODEL.md](COST_MODEL.md) and
-  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md); this document does not assume a specific number.
+- **The repository is public**, so standard GitHub-hosted runner minutes for public repositories
+  are free (no monthly minute quota to track, unlike a private repository on the free plan) — see
+  [COST_MODEL.md](COST_MODEL.md). Larger/specialized runners and some storage or advanced features
+  can still be billable even on a public repository; the ingestion cadence should still be
+  reviewed against actual usage once Phase 2's scheduled jobs exist, but not because of a private-
+  repo minute quota.
 
 ## 5. Release process (proposal)
 

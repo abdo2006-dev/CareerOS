@@ -9,9 +9,12 @@
 // password grant endpoint and issues real REST requests with their real
 // JWTs, against the running local stack.
 //
-// This must only ever run against a loopback Supabase URL, and it always
-// deletes the temporary users and their data on the way out, even if an
-// assertion fails.
+// This must only ever run against a loopback Supabase URL. Cleanup for every
+// temporary user is always attempted, even if an assertion fails; a cleanup
+// failure fails the test command too (see the `finally` block), and cleanup
+// is verified, not just attempted -- deleting a user is expected to cascade
+// to their profile row (see the `on delete cascade` in the profiles
+// migration), and this suite checks that it actually did.
 //
 // Usage:
 //   SUPABASE_URL=http://127.0.0.1:54321 \
@@ -19,14 +22,16 @@
 //   SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxxxxxxxxx \
 //   node supabase/scripts/api-integration-test.mjs
 
-import assert from 'node:assert/strict'
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
 const SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
 
-const TEST_PASSWORD = 'careeros-integration-test-only';
-const runId = crypto.randomUUID().slice(0, 8);
+// Freshly generated every run -- never a committed constant. Not printed.
+const TEST_PASSWORD = randomBytes(18).toString('base64url');
+const runId = randomUUID().slice(0, 8);
 
 function assertLoopback(rawUrl) {
   const parsed = new URL(rawUrl);
@@ -47,7 +52,7 @@ async function adminCreateUser(email) {
     },
     body: JSON.stringify({ email, password: TEST_PASSWORD, email_confirm: true }),
   });
-  if (!res.ok) throw new Error(`admin create user failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`admin create user failed: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -57,8 +62,35 @@ async function adminDeleteUser(id) {
     headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
   });
   if (!res.ok) {
-    console.error(`warning: failed to clean up user ${id}: ${res.status} ${await res.text()}`);
+    throw new Error(`delete failed: HTTP ${res.status}`);
   }
+}
+
+async function adminGetUser(id) {
+  return fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
+    headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+  });
+}
+
+async function adminGetProfile(userId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}`, {
+    headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+  });
+  if (!res.ok) throw new Error(`admin profile lookup failed: HTTP ${res.status}`);
+  return res.json();
+}
+
+async function verifyUserFullyRemoved(id) {
+  const problems = [];
+  const userRes = await adminGetUser(id);
+  if (userRes.status !== 404) {
+    problems.push(`auth user ${id} still retrievable after deletion (HTTP ${userRes.status}, expected 404)`);
+  }
+  const profileRows = await adminGetProfile(id);
+  if (profileRows.length !== 0) {
+    problems.push(`profile row for ${id} still present after user deletion (expected cascade delete)`);
+  }
+  return problems;
 }
 
 async function signIn(email) {
@@ -67,7 +99,7 @@ async function signIn(email) {
     headers: { apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
-  if (!res.ok) throw new Error(`sign-in failed for ${email}: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`sign-in failed for ${email}: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -176,10 +208,30 @@ async function main() {
 
     console.log(`\nAll ${checkCount} checks passed.`);
   } finally {
-    // ---- cleanup: always, even if an assertion above threw ---------------
-    if (userA) await adminDeleteUser(userA.id);
-    if (userB) await adminDeleteUser(userB.id);
-    console.log('Temporary users and their data cleaned up.');
+    // ---- cleanup: attempted for every temporary user, always -------------
+    // Collected rather than fire-and-forget: a cleanup failure must fail the
+    // test command (via process.exitCode below), and if an assertion above
+    // also failed, that original failure must still be what's reported as
+    // the reason main() rejects -- this block never throws.
+    const cleanupErrors = [];
+    for (const user of [userA, userB]) {
+      if (!user) continue;
+      try {
+        await adminDeleteUser(user.id);
+        const problems = await verifyUserFullyRemoved(user.id);
+        cleanupErrors.push(...problems);
+      } catch (err) {
+        cleanupErrors.push(`failed to delete user ${user.id}: ${err.message}`);
+      }
+    }
+
+    if (cleanupErrors.length > 0) {
+      console.error('\nCleanup failures:');
+      for (const problem of cleanupErrors) console.error(`  - ${problem}`);
+      process.exitCode = 1;
+    } else if (userA || userB) {
+      console.log('Temporary users and their profile rows verified cleaned up.');
+    }
   }
 }
 

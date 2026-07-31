@@ -18,6 +18,7 @@ export function ProfilePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
 
   const loadProfile = useCallback(async () => {
     if (!userId) return
@@ -77,17 +78,34 @@ export function ProfilePage() {
     setSaveMessage(null)
     setErrorMessage(null)
 
-    const { error } = await supabase
+    // .select() makes the affected rows come back in `data` so a save that
+    // matches zero rows (RLS-filtered, or the row was deleted concurrently)
+    // can be told apart from an actual save -- PostgREST returns 200 with no
+    // error in both cases, so `error` alone is not enough to confirm success.
+    const { data, error } = await supabase
       .from('profiles')
       .update({ headline })
       .eq('user_id', userId)
+      .select('user_id')
 
     setSaving(false)
     if (error) {
       setErrorMessage(error.message)
       return
     }
+    if (!data || data.length === 0) {
+      await loadProfile()
+      return
+    }
     setSaveMessage('Saved.')
+  }
+
+  async function handleSignOut() {
+    setSignOutError(null)
+    const { error } = await signOut()
+    if (error) {
+      setSignOutError(error)
+    }
   }
 
   return (
@@ -103,11 +121,13 @@ export function ProfilePage() {
         <button
           type="button"
           className="secondary"
-          onClick={() => void signOut()}
+          onClick={() => void handleSignOut()}
         >
           Sign out
         </button>
       </header>
+
+      {signOutError && <p role="alert">{signOutError}</p>}
 
       {status === 'loading' && <p>Loading…</p>}
 

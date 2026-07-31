@@ -9,7 +9,18 @@ import { ProfilePage } from './pages/ProfilePage'
 // request regardless of what this component renders (see
 // docs/RLS_POLICY_MATRIX.md and AGENTS.md).
 function AppShell() {
-  const { session, loading } = useAuth()
+  const { session, loading, initError, retryInit } = useAuth()
+
+  if (initError) {
+    return (
+      <main>
+        <p role="alert">{initError}</p>
+        <button type="button" onClick={retryInit}>
+          Retry
+        </button>
+      </main>
+    )
+  }
 
   if (loading) {
     return (

@@ -13,18 +13,28 @@
 //   - refuses to run unless SUPABASE_URL resolves to a loopback address
 //   - reads the secret key from an environment variable only -- never
 //     hardcoded, never printed, never logged
-//   - idempotent: safe to re-run; existing users are reset, not duplicated
-//   - no dependency beyond Node's built-in fetch (Node 18+)
+//   - no fixed/committed development password: uses CAREEROS_DEV_PASSWORD
+//     if deliberately supplied, otherwise generates a fresh cryptographically
+//     random password every run and prints it once -- it is never written to
+//     a tracked file
+//   - idempotent: safe to re-run; existing users are reset (to the newly
+//     supplied or generated password), not duplicated
+//   - no dependency beyond Node's built-in fetch and crypto (Node 18+)
 //
 // Usage:
 //   SUPABASE_URL=http://127.0.0.1:54321 \
 //   SUPABASE_SECRET_KEY=sb_secret_xxxxxxxxxxxx \
 //   node supabase/scripts/setup-local-users.mjs
+//
+// Optionally set CAREEROS_DEV_PASSWORD to choose the password yourself
+// instead of getting a freshly generated one.
+
+import { randomBytes } from 'node:crypto';
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
 const SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
-const DEV_PASSWORD = 'careeros-local-dev-only';
+const DEV_PASSWORD = process.env.CAREEROS_DEV_PASSWORD ?? randomBytes(18).toString('base64url');
 
 const USERS = [
   { label: 'primary', email: 'dev-owner@careeros.local', headline: 'Local dev owner account' },
@@ -118,7 +128,9 @@ async function main() {
   assertLoopback(SUPABASE_URL);
 
   console.log(`Target: ${SUPABASE_URL} (loopback confirmed)`);
-  console.log(`Dev password for all accounts below: "${DEV_PASSWORD}" (local-only, never reuse elsewhere)\n`);
+  console.log(
+    `LOCAL-ONLY dev password for all accounts below (shown once, not written to any file): "${DEV_PASSWORD}"\n`,
+  );
 
   for (const user of USERS) {
     const { id, status } = await createOrResetUser(user);
@@ -126,7 +138,7 @@ async function main() {
     console.log(`[${user.label}] ${user.email} -> ${status} (id ${id}), profile row upserted`);
   }
 
-  console.log('\nDone. Secret key was never printed.');
+  console.log('\nDone. Secret key was never printed. Re-run this script to reset to a new password.');
 }
 
 main().catch((err) => {

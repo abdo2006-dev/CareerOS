@@ -28,13 +28,13 @@ describe('SignInPage', () => {
     await user.type(screen.getByLabelText(/email/i), 'dev-owner@careeros.local')
     await user.type(
       screen.getByLabelText(/password/i),
-      'careeros-local-dev-only',
+      'unit-test-password-not-a-secret',
     )
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
       email: 'dev-owner@careeros.local',
-      password: 'careeros-local-dev-only',
+      password: 'unit-test-password-not-a-secret',
     })
   })
 
@@ -47,7 +47,10 @@ describe('SignInPage', () => {
     render(<SignInPage />)
 
     await user.type(screen.getByLabelText(/email/i), 'dev-owner@careeros.local')
-    await user.type(screen.getByLabelText(/password/i), 'wrong-password')
+    await user.type(
+      screen.getByLabelText(/password/i),
+      'unit-test-wrong-password-not-a-secret',
+    )
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(

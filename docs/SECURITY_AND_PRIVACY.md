@@ -60,6 +60,17 @@ multi-user-later" claim in the project brief; it is not just an aspiration.
   them.
 - No secret is ever placed in a file committed to the repository, including `.env` files — a
   `.env.example` with placeholder names is the pattern once implementation starts.
+- **The repository is public** (see [ADR-009](adr/ADR-009-zero-cost-mvp-deployment.md) and
+  [README.md](../README.md)), which means its full history, every branch, pull-request content,
+  and GitHub Actions logs/artifacts are publicly visible. GitHub Actions repository secrets remain
+  safe under a public repository — they are never exposed in the workflow file itself, and GitHub
+  masks a secret's literal value in logs if it's registered as a repository secret. Local
+  development goes further and doesn't rely on masking at all: `supabase/scripts/setup-local-users.mjs`
+  generates a fresh random local-only development password each run and prints only that (never
+  the Supabase secret key) so it can be used to sign in;
+  `supabase/scripts/api-integration-test.mjs` generates its own random per-run password too, but
+  never prints it, any access token, or the secret key, since it never needs to be typed by a
+  human.
 
 ## 5. Resume and application data privacy
 

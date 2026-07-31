@@ -7,6 +7,7 @@ const mockSignOut = vi.fn()
 const mockMaybeSingle = vi.fn()
 const mockInsert = vi.fn()
 const mockUpdateEq = vi.fn()
+const mockUpdateSelect = vi.fn()
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -26,7 +27,10 @@ vi.mock('../lib/supabaseClient', () => ({
       }),
       insert: (...args: unknown[]) => mockInsert(...args),
       update: () => ({
-        eq: (...args: unknown[]) => mockUpdateEq(...args),
+        eq: (...args: unknown[]) => {
+          mockUpdateEq(...args)
+          return { select: (...args2: unknown[]) => mockUpdateSelect(...args2) }
+        },
       }),
     }),
   },
@@ -37,6 +41,9 @@ describe('ProfilePage', () => {
     mockMaybeSingle.mockReset()
     mockInsert.mockReset()
     mockUpdateEq.mockReset()
+    mockUpdateSelect.mockReset()
+    mockSignOut.mockReset()
+    mockSignOut.mockResolvedValue({ error: null })
   })
 
   it('shows a loading state before the profile query resolves', () => {
@@ -81,7 +88,10 @@ describe('ProfilePage', () => {
       data: { user_id: 'user-1', headline: 'Original headline' },
       error: null,
     })
-    mockUpdateEq.mockResolvedValue({ error: null })
+    mockUpdateSelect.mockResolvedValue({
+      data: [{ user_id: 'user-1' }],
+      error: null,
+    })
     const user = userEvent.setup()
 
     render(<ProfilePage />)
@@ -97,6 +107,27 @@ describe('ProfilePage', () => {
     expect(await screen.findByText(/saved/i)).toBeInTheDocument()
   })
 
+  it('does not show Saved when the update affects zero rows, and reloads into the missing-profile state', async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({
+        data: { user_id: 'user-1', headline: 'Original headline' },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: null })
+    mockUpdateSelect.mockResolvedValue({ data: [], error: null })
+    const user = userEvent.setup()
+
+    render(<ProfilePage />)
+
+    const headlineInput = await screen.findByLabelText(/headline/i)
+    await user.clear(headlineInput)
+    await user.type(headlineInput, 'New headline')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText(/no profile yet/i)).toBeInTheDocument()
+    expect(screen.queryByText(/saved/i)).not.toBeInTheDocument()
+  })
+
   it('calls signOut when the sign-out button is clicked', async () => {
     mockMaybeSingle.mockResolvedValue({
       data: { user_id: 'user-1', headline: 'x' },
@@ -110,5 +141,25 @@ describe('ProfilePage', () => {
     await user.click(screen.getByRole('button', { name: /sign out/i }))
 
     expect(mockSignOut).toHaveBeenCalled()
+  })
+
+  it('shows feedback when sign-out fails', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { user_id: 'user-1', headline: 'x' },
+      error: null,
+    })
+    mockSignOut.mockResolvedValue({
+      error: 'Sign-out failed. Please try again.',
+    })
+    const user = userEvent.setup()
+
+    render(<ProfilePage />)
+    await screen.findByLabelText(/headline/i)
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /sign-out failed/i,
+    )
   })
 })
