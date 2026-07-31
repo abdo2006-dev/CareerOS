@@ -147,10 +147,9 @@ Chosen as Python specifically for its data/text-processing and future ML ecosyst
 parsing, NLP-assisted extraction, pandas-based market analysis), independent of what language the
 (currently nonexistent) synchronous backend would use if one is added later.
 
-**Where it runs**: GitHub Actions' free minutes for this repository (private repo minutes are
-limited but sufficient at this job frequency — see [COST_MODEL.md](COST_MODEL.md)). Not
-always-on; each job is a short-lived process that starts, does work, writes to Postgres, and
-exits.
+**Where it runs**: GitHub Actions, on standard GitHub-hosted runners. The repository is public, so
+these minutes are free and unlimited (see [COST_MODEL.md](COST_MODEL.md)) — not always-on; each
+job is a short-lived process that starts, does work, writes to Postgres, and exits.
 
 **Failure cases**: a failed adapter run must not corrupt existing data — writes are additive
 (new versions), and a run that errors partway logs the failure (see
@@ -167,23 +166,40 @@ tier) as the first place such logic would go, with a move to a small containeriz
 (execution time, language) don't fit. This is discussed, not built — see
 [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md).
 
-## 3. Repository layout (proposal)
+## 3. Repository layout (Phase 0: implemented as shown)
 
 ```
 careeros/
-  app/            React + TypeScript + Vite frontend
+  app/            React + TypeScript + Vite frontend (implemented, Phase 0)
   ingestion/      Python: source adapters, normalization, scoring, resume parsing
-    adapters/     one module per source, implementing the common adapter interface
-    scoring/      deterministic scoring pipeline
-    parsing/      resume extraction
-  supabase/       SQL migrations, RLS policies, (later) edge functions
+                  (placeholder only -- no code yet, see ingestion/README.md; Phase 2+)
+  supabase/       config.toml, migrations/, tests/database/ (pgTAP), scripts/ (local-only
+                  dev tooling) -- implemented, Phase 0
   docs/           this documentation set
-  .github/workflows/   GitHub Actions schedules for ingestion/parsing/scoring
+  .github/workflows/   ci.yml (Phase 0); ingestion/parsing/scoring schedules are Phase 2+
 ```
 
 A monorepo, not separate repositories, because the frontend, database schema, and ingestion
 pipeline change together constantly at this project's size, and a single maintainer gains nothing
 from cross-repo versioning overhead.
+
+### Local development environment (Phase 0, implemented)
+
+The local/dev-environment question in the original planning pass is now resolved and exercised,
+not just decided on paper:
+
+- **Container runtime**: Colima (Docker CLI + Colima, via Homebrew) — not Docker Desktop. Chosen
+  as the lightweight open-source option; see [DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md) for
+  the exact version and a real networking issue this surfaced (Colima's default port forwarder
+  exposed the local stack to the LAN, not just localhost — fixed, documented, and worth reading
+  before assuming "it just works").
+- **Supabase CLI**, pinned to an exact version everywhere (locally and in CI) — never `latest`.
+  Local Postgres/Auth/Storage/PostgREST run as Docker containers this CLI orchestrates.
+- **Migrations are the sole source of truth** for schema, per [AGENTS.md](../AGENTS.md) — no
+  manual edits in Supabase Studio (local) or a hosted dashboard (later), ever.
+- **No hosted Supabase project exists yet**, and Phase 0 does not create one. No second hosted
+  "dev" project either, and no Supabase Branching (unneeded complexity/cost for a $0, single-
+  maintainer workflow). Exactly one hosted project is reserved for later production use only.
 
 ## 4. Alternatives considered
 
@@ -261,8 +277,10 @@ This design comfortably handles one user and a realistic ingestion volume (low t
 opportunity records, daily-to-hourly ingestion cadence). Known ceilings, documented honestly rather
 than solved preemptively:
 
-- **GitHub Actions free minutes** (private repo) cap ingestion frequency; not a problem at
-  daily/few-times-daily cadence, would become one at near-real-time polling of many sources.
+- **GitHub Actions minutes** are free and unlimited on standard runners for this public
+  repository; the practical ceiling is runner concurrency and job duration, not a minute quota —
+  not a problem at daily/few-times-daily cadence, would become a design question at near-real-time
+  polling of many sources.
 - **Supabase free-tier project pausing on inactivity** requires a keep-alive strategy (the
   scheduled jobs themselves largely cover this, but this is a real fragility, not a solved
   problem — see [COST_MODEL.md](COST_MODEL.md)).
@@ -318,9 +336,9 @@ UI status indicator must be built:
   API/worker) layer already reserved in [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md)
   — this document does not introduce that layer now, and no code should anticipate it before it's
   actually decided.
-- **GitHub Actions usage must be measured against the account's actual plan, not an assumed
-  figure.** Private-repository Actions minutes are limited by the account's plan (personal Free,
-  Pro, or a student-program upgrade change the allowance and the per-OS minute multiplier); before
-  relying on a specific cadence, the actual current allowance for the account this project runs
-  under should be checked in GitHub's own billing/usage settings, not assumed from a number in
-  this document. See [COST_MODEL.md](COST_MODEL.md) and [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- **GitHub Actions usage should still be watched, even though it's free here.** This repository is
+  public, so standard-runner minutes carry no monthly quota (unlike a private repository on the
+  free plan) — but larger/specialized runners and some storage or advanced Actions features can
+  still be billable, so a specific cadence choice should be checked against GitHub's own
+  billing/usage settings before being relied on, not assumed from a number in this document. See
+  [COST_MODEL.md](COST_MODEL.md) and [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).

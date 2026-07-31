@@ -64,16 +64,33 @@ erDiagram
 
 ## Profile domain (user-owned, RLS-protected)
 
+**Implementation status**: `profiles` and `education_entries` are implemented as of Phase 0
+(migration `supabase/migrations/20260726145047_profiles_and_education_entries.sql`), with a
+deliberately minimal Phase 0 field set — the fuller field lists below (`work_eligibility`,
+`expected_graduation`, the `source` provenance column, etc.) are the Phase 1 target, not yet
+built. `work_experience`, `projects`, `skills_catalog`, `user_skills`, `user_languages`, and
+`preferences` are not yet implemented — deferred to Phase 1, since they reuse the same two RLS
+patterns Phase 0 already proves (owned-directly, owned-via-FK) and add no new pattern to justify
+building them before the rest of the profile domain is real.
+
+**Ownership naming convention (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table's
+owner column is literally named `user_id` — never aliased (e.g. `profile_id`), even on child
+tables that reference `profiles.user_id`. `education_entries.user_id` is a direct FK to
+`profiles.user_id`, not a same-named-but-different column. This is deliberate: aliasing the
+column to `profile_id` while comparing it to `auth.uid()` in RLS policies obscures, at every call
+site, that it is the actual row-ownership key — a future contributor reading `education_entries`
+in isolation should be able to tell who owns a row without knowing it joins to `profiles`.
+
 | Table | Key fields | Notes |
 |---|---|---|
-| `profiles` | `user_id` (PK/FK), `headline`, `work_eligibility`, `degree_program`, `degree_year`, `expected_graduation`, `profile_complete` | One row per user; `work_eligibility` captures visa/permitted-hours facts needed for eligibility checks |
-| `education_entries` | `id`, `profile_id`, `institution`, `degree`, `field`, `start_date`, `end_date`, `source` (`resume_extracted` \| `manual`) | |
-| `work_experience` | `id`, `profile_id`, `organization`, `role`, `start_date`, `end_date`, `description`, `skills_used[]`, `source` | |
-| `projects` | `id`, `profile_id`, `title`, `description`, `technologies[]`, `link`, `engineering_areas[]`, `source` | Central to project-evidence scoring |
-| `skills_catalog` | `id`, `name`, `category` | Shared reference table (not user-owned), seeded + grown from ingestion |
-| `user_skills` | `id`, `profile_id`, `skill_id`, `proficiency`, `evidence_project_id` (nullable FK), `source` | Links a skill claim to supporting evidence where possible, for explainability |
-| `user_languages` | `id`, `profile_id`, `language`, `proficiency_cefr` | |
-| `preferences` | `profile_id` (PK/FK), `preferred_locations[]`, `bremen_hamburg_priority` (bool), `remote_acceptable`, `target_engineering_areas[]`, `target_opportunity_types[]` | |
+| `profiles` | `user_id` (PK, FK to `auth.users(id)` on delete cascade), `headline`, `degree_program`, `degree_year` (checked 1–10), `profile_complete`, `created_at` | Phase 0 implemented. `work_eligibility`/`expected_graduation` deferred to Phase 1 |
+| `education_entries` | `id` (PK), `user_id` (FK to `profiles.user_id` on delete cascade — **not** `profile_id`), `institution` (not null), `degree`, `field`, `start_date`, `end_date`, `created_at` | Phase 0 implemented. Date-order check constraint. `source` provenance column deferred to Phase 1 |
+| `work_experience` | `id`, `user_id`, `organization`, `role`, `start_date`, `end_date`, `description`, `skills_used[]`, `source` | Not yet implemented — Phase 1 |
+| `projects` | `id`, `user_id`, `title`, `description`, `technologies[]`, `link`, `engineering_areas[]`, `source` | Not yet implemented — Phase 1. Central to project-evidence scoring |
+| `skills_catalog` | `id`, `name`, `category` | Not yet implemented — Phase 1. Shared reference table (not user-owned), seeded + grown from ingestion |
+| `user_skills` | `id`, `user_id`, `skill_id`, `proficiency`, `evidence_project_id` (nullable FK), `source` | Not yet implemented — Phase 1. Links a skill claim to supporting evidence where possible, for explainability |
+| `user_languages` | `id`, `user_id`, `language`, `proficiency_cefr` | Not yet implemented — Phase 1 |
+| `preferences` | `user_id` (PK/FK), `preferred_locations[]`, `bremen_hamburg_priority` (bool), `remote_acceptable`, `target_engineering_areas[]`, `target_opportunity_types[]` | Not yet implemented — Phase 1 |
 
 ## Resume domain
 

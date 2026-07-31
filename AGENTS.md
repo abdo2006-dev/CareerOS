@@ -49,6 +49,12 @@ queue, or framework. If you believe an ADR's decision is wrong, write a new ADR 
   Prefer the free tier of an existing chosen provider over a new provider.
 - **Don't add dependencies casually.** Every new library is a maintenance and security surface for
   a single-maintainer project. Prefer the standard library or an already-adopted dependency.
+- **Every user-owned table's ownership column is literally named `user_id`.** Never alias it (e.g.
+  `profile_id`) even when it references `profiles.user_id` — the owner must be identifiable at a
+  glance without tracing a join. See [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+- **Migrations under `supabase/migrations/` are the only way schema changes happen**, in any
+  environment. Never hand-edit schema in a Supabase dashboard (local Studio or, later, hosted) —
+  see [docs/DEPLOYMENT_STRATEGY.md](docs/DEPLOYMENT_STRATEGY.md).
 
 ## Working practices
 

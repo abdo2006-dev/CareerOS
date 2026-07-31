@@ -12,17 +12,27 @@ a future second user of the same system.
 
 ## 2. Authentication
 
-Supabase Auth (email/password or magic link) issues a JWT scoped to one user. The frontend never
-holds long-lived credentials; the session token is what authorizes direct Postgres access via
-PostgREST, checked against RLS policies on every request. See
+**Implemented as of Phase 0**: Supabase Auth with email/password (magic link and OAuth/social
+login are not implemented — see [ADR-008](adr/ADR-008-private-first-multi-user-later.md) and
+[DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md) for why password auth was chosen). Signs in via
+the real password grant endpoint, issuing a JWT scoped to one user. The frontend never holds
+long-lived credentials; the session token is what authorizes direct Postgres access via
+PostgREST, checked against RLS policies on every request. Public self-service signup is disabled
+(`enable_signup = false`); accounts are created exclusively through the Admin API, using the
+service-role/secret key from a trusted context — never through the public signup flow, locally or
+in a future hosted production project. See
 [ADR-008](adr/ADR-008-private-first-multi-user-later.md) for why this is built as
 real-auth-from-day-one rather than a shortcut.
 
 ## 3. Authorization: Row Level Security is the actual boundary
 
 Every user-owned table (see [DATA_MODEL.md](DATA_MODEL.md)) has an RLS policy of the form
-`user_id = auth.uid()`. This is enforced by Postgres itself, not by frontend logic — the frontend
-UI hiding a button is not a security control. Shared/global tables (opportunities, source
+`(select auth.uid()) = user_id`. This is enforced by Postgres itself, not by frontend logic — the
+frontend UI hiding a button is not a security control. As implemented in Phase 0, every migration
+also explicitly `REVOKE ALL` on `anon`/`authenticated`/`service_role` before granting back exactly
+the intended privileges — Supabase's own default per-schema privileges otherwise grant more than
+intended (see [RLS_POLICY_MATRIX.md](RLS_POLICY_MATRIX.md) for the specific finding), so nothing
+here is left to a platform default. Shared/global tables (opportunities, source
 listings, sources) are readable by any authenticated user and writable only by the service-role
 key, which lives only in GitHub Actions secrets and is never sent to the browser or embedded in
 any client-side bundle. The narrow exception — a user confirming or rejecting a potential
@@ -50,6 +60,17 @@ multi-user-later" claim in the project brief; it is not just an aspiration.
   them.
 - No secret is ever placed in a file committed to the repository, including `.env` files — a
   `.env.example` with placeholder names is the pattern once implementation starts.
+- **The repository is public** (see [ADR-009](adr/ADR-009-zero-cost-mvp-deployment.md) and
+  [README.md](../README.md)), which means its full history, every branch, pull-request content,
+  and GitHub Actions logs/artifacts are publicly visible. GitHub Actions repository secrets remain
+  safe under a public repository — they are never exposed in the workflow file itself, and GitHub
+  masks a secret's literal value in logs if it's registered as a repository secret. Local
+  development goes further and doesn't rely on masking at all: `supabase/scripts/setup-local-users.mjs`
+  generates a fresh random local-only development password each run and prints only that (never
+  the Supabase secret key) so it can be used to sign in;
+  `supabase/scripts/api-integration-test.mjs` generates its own random per-run password too, but
+  never prints it, any access token, or the secret key, since it never needs to be typed by a
+  human.
 
 ## 5. Resume and application data privacy
 

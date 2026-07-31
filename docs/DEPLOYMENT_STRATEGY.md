@@ -7,14 +7,55 @@ Status: **proposal**, consistent with [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 At MVP scale (one user, one maintainer), two environments are enough:
 
-- **Local development**: frontend via Vite dev server against a Supabase project (either a free
-  second "dev" Supabase project or the same project with clear discipline about test data —
-  decision deferred to implementation start, see [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)); Python
-  ingestion/scoring run locally against the same dev database for adapter development.
-- **Production**: the live single-user system.
+- **Local development** (implemented as of Phase 0): frontend via Vite dev server against a fully
+  local Supabase CLI stack — Postgres, Auth, PostgREST, Studio — running in Docker containers.
+  **No hosted Supabase project exists for development.** There is no second "dev" hosted project
+  either, and no Supabase Branching (an unnecessary cost/complexity for a $0, single-maintainer
+  workflow) — this resolves the open question the original planning pass deferred. Exactly one
+  hosted Supabase project is reserved for later, for production only, and is not created yet.
+- **Production**: the live single-user system, on a hosted Supabase project created later.
 
 A third "staging" environment is not justified yet — reconsider if a second real user is ever
 onboarded before a broader public launch.
+
+### Local environment — implementation details (Phase 0)
+
+- **Container runtime**: Colima (Docker CLI + Colima via Homebrew), not Docker Desktop — the
+  lightweight open-source combination, chosen per explicit instruction. Started with
+  `colima start --cpu 4 --memory 4 --disk 60` — an example allocation only; adjust the
+  `--cpu`/`--memory`/`--disk` values to whatever your own machine can spare.
+- **A real networking issue was found and fixed, not assumed away, on the machine used for Phase 0
+  development**: Colima's default port forwarder mirrors a container's bind address to the host —
+  since Supabase's local containers publish on `0.0.0.0` (confirmed via `docker ps`), Colima's
+  default forwarding also bound `0.0.0.0` on that Mac's real network interfaces, making the local
+  stack reachable from any other device on the same LAN (confirmed with a real cross-device
+  connectivity test, not assumed). Setting Docker's own `daemon.json` `"ip": "127.0.0.1"` default
+  did **not** fix this, because Supabase's containers specify their host bind explicitly. The
+  actual fix: `portForwarder: none` in Colima's config (disabling its automatic forwarder
+  entirely) plus explicit, loopback-only SSH local-forwards opened by
+  `supabase/scripts/dev-tunnel.sh` (and closed by `supabase/scripts/dev-tunnel-stop.sh`) for
+  exactly the four ports CareerOS needs. Verified on that machine: the local stack is unreachable
+  from the LAN and reachable from `127.0.0.1`. This finding is reported as observed and
+  reproducible on that specific setup, not as a claim that every Colima installation or version
+  behaves identically — if you don't reproduce it on yours, the tunnel script is still the safe
+  default and costs nothing to keep using.
+- **Supabase CLI**: installed via `brew install supabase/tap/supabase`. **Exact version pinned
+  everywhere it matters**: `2.109.1`, matching what CI installs via `supabase/setup-cli@v3`'s
+  `version:` input — never `latest`, so a CLI update can't silently change local or CI behavior.
+- **Public signup is disabled** even locally (`enable_signup = false` in `supabase/config.toml`,
+  at the top `[auth]` level). Local development/fixture accounts are created exclusively via the
+  Admin API (`supabase/scripts/setup-local-users.mjs`), using the local secret key, never through
+  the signup endpoint. One real, non-obvious finding worth recording: `[auth.email].enable_signup`
+  turned out to also gate the email/password *provider* as a whole — including password-grant
+  **sign-in** for already-confirmed users, not just the signup endpoint. Disabling it broke login
+  entirely ("Email logins are disabled"), confirmed against the running stack; it is left `true`,
+  while the top-level `[auth].enable_signup = false` is what actually blocks public self-service
+  signup.
+- **Migrations are the sole source of truth for schema.** `supabase/migrations/*.sql` are applied
+  with `supabase db reset` (drops and recreates the local database from empty, replaying every
+  migration) — this is also exactly what CI does, so "works locally" and "works in CI" mean the
+  same thing. No manual schema edits in local Studio, ever, and the same discipline carries over
+  to the future hosted dashboard.
 
 ## 2. Frontend deployment
 
@@ -61,10 +102,12 @@ onboarded before a broader public launch.
   belongs to the synchronous Edge Function/worker layer reserved in
   [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md), introduced only once actually needed
   — not to GitHub Actions.
-- **GitHub Actions minute usage for private repositories must be checked against the account's
-  actual current plan and allowance** (in GitHub's billing/usage settings) before the ingestion
-  cadence is finalized — see [COST_MODEL.md](COST_MODEL.md) and
-  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md); this document does not assume a specific number.
+- **The repository is public**, so standard GitHub-hosted runner minutes for public repositories
+  are free (no monthly minute quota to track, unlike a private repository on the free plan) — see
+  [COST_MODEL.md](COST_MODEL.md). Larger/specialized runners and some storage or advanced features
+  can still be billable even on a public repository; the ingestion cadence should still be
+  reviewed against actual usage once Phase 2's scheduled jobs exist, but not because of a private-
+  repo minute quota.
 
 ## 5. Release process (proposal)
 

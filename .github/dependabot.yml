@@ -1,0 +1,11 @@
+version: 2
+
+# github-actions only, for now -- keeps SHA-pinned actions (see
+# .github/workflows/ci.yml) up to date without opting into general npm
+# version-update automation. Dependabot preserves the trailing "# vX.Y.Z"
+# comment when it bumps a pinned SHA.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

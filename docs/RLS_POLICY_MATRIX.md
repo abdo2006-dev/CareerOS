@@ -37,12 +37,40 @@ both this file and its corresponding test.
   (personal but low-consequence if exposed), `High` (personal and consequential if exposed —
   career/education/eligibility data), `Very High` (resume file content, or data revealing
   eligibility/immigration status specifically).
+- **Grants are never assumed from Supabase's defaults.** Empirically (confirmed against the
+  running local stack while implementing Phase 0), Supabase's per-schema default privileges grant
+  `authenticated` and `service_role` every standard table privilege (SELECT/INSERT/UPDATE/DELETE/
+  TRUNCATE/REFERENCES/TRIGGER) on a newly created `public` table, and historically could do the
+  same for `anon`. Every migration therefore `REVOKE ALL` on all three roles first, then grants
+  back exactly the intended, minimal set — so the privilege set in effect is always what's
+  explicitly written in the migration, never whatever a platform default happened to leave in
+  place. Grants and RLS remain two independent controls: a grant decides whether a role can reach
+  a table at all; RLS decides which rows it may see once there. Neither one substitutes for the
+  other, and `service_role`'s RLS bypass does not remove the need for its explicit grant.
+- **Anonymous access failure mode is "insufficient privilege," not "empty result."** Because
+  `anon` is granted nothing at all on `profiles`/`education_entries`, an anonymous request fails at
+  the grant level (Postgres error `42501`, surfaced by PostgREST as HTTP 403) before RLS is even
+  evaluated. This is a meaningfully different, and stronger, guarantee than "RLS filtered the rows
+  down to zero" (which is what happens to an *authenticated* user querying another user's data) —
+  tests must assert the correct one for each role, and confusing them is a real category error, not
+  a nitpick.
 
 ## Profile domain (user-owned)
 
+**Status**: `profiles` and `education_entries` rows below are implemented and pgTAP-tested as of
+Phase 0 (see [DATA_MODEL.md](DATA_MODEL.md)); `work_experience`, `projects`, `user_skills`,
+`user_languages`, `preferences`, and `skills_catalog` are not yet built (Phase 1) — their rows
+here describe the intended, not-yet-implemented policy.
+
+Every table's owner column is literally named `user_id` (see [AGENTS.md](../AGENTS.md)) — child
+tables reference the owning user via a direct `user_id` foreign key to `profiles.user_id`, never
+via a renamed column like `profile_id`. The implemented predicate form is
+`(select auth.uid()) = user_id` (wrapping `auth.uid()` in a `select` lets Postgres evaluate it
+once per statement rather than once per row — the currently-recommended, non-deprecated pattern).
+
 | Table(s) | Owner / data type | Browser SELECT | Browser INSERT | Browser UPDATE | Browser DELETE | Service-role | Expected RLS predicate | Anon access | Required isolation test | Sensitivity |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `profiles`, `education_entries`, `work_experience`, `projects`, `user_skills`, `user_languages`, `preferences` | One row/set per user; child tables reference the owning user via `profile_id = auth.uid()` | Own rows only | Own rows only | Own rows only | Own rows only | Full (admin/export/account-deletion tooling) | `user_id = auth.uid()` (on `profiles`); `profile_id = auth.uid()` (on child tables) | No | User A cannot SELECT, INSERT (for A's `profile_id`), UPDATE, or DELETE any row owned by user B; User A has full CRUD on their own rows | High (`profiles.work_eligibility` in particular reveals immigration/visa status — treat as Very High for that column specifically) |
+| `profiles`, `education_entries`, `work_experience`, `projects`, `user_skills`, `user_languages`, `preferences` | One row/set per user; every table's owner column is `user_id` | Own rows only | Own rows only | Own rows only | Own rows only | Full (admin/export/account-deletion tooling) | `(select auth.uid()) = user_id` on every table (`profiles.user_id` is the PK; child tables' `user_id` is a direct FK to it) | No | User A cannot SELECT, INSERT (for A's `user_id`), UPDATE, or DELETE any row owned by user B, including by rewriting a child row's `user_id` to claim it; User A has full CRUD on their own rows | High (`profiles.work_eligibility`, once added in Phase 1, reveals immigration/visa status — treat as Very High for that column specifically) |
 | `skills_catalog` | Shared reference data (skill names), not user-owned | All authenticated users | No (service-role only, grown by ingestion/normalization) | No | No | Full | None (public reference table, but still gated behind authentication for MVP) | No | Any authenticated user can read the full catalog; no authenticated user can write to it | Low |
 
 ## Resume domain (user-owned)

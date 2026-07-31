@@ -1,6 +1,9 @@
 # ADR-008: Private-First, Multi-User-Later
 
-**Status**: Proposed
+**Status**: Accepted — implemented and tested in Phase 0: every user-owned table carries a
+`user_id` column and a `(select auth.uid()) = user_id` RLS policy, proven by 58 passing pgTAP
+assertions and a real API-path integration test (see
+[TESTING_STRATEGY.md](../TESTING_STRATEGY.md)), not just designed.
 
 ## Context
 

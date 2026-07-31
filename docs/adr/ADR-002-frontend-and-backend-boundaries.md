@@ -1,6 +1,9 @@
 # ADR-002: Frontend and Backend Boundaries
 
-**Status**: Proposed
+**Status**: Accepted — implemented and tested in Phase 0: the frontend talks directly to the local
+Supabase stack (Auth + PostgREST) with no backend server in the request path, verified end to end
+both by automated tests and manually in a real browser. The reserved Edge Function/FastAPI layer
+remains exactly that — reserved, not built.
 
 ## Context
 
