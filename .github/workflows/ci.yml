@@ -1,13 +1,15 @@
 name: CI
 
-# Phase 0 foundation checks. Runs on every pull request targeting main, and on
-# pushes to main and the Phase 0 branch. Add additional branch patterns here
-# as later phases introduce their own long-lived branches.
+# Pull requests validate feature branches before merge; the merged result is
+# validated again on protected main. This deliberately avoids duplicate runs
+# for both the push and pull-request event on every feature branch.
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
   push:
-    branches: [main, phase-0/foundation]
+    branches:
+      - main
 
 # Repository-default GITHUB_TOKEN permissions are not needed for anything in
 # this workflow beyond reading the checked-out code.
@@ -26,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: app/.nvmrc
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
 
@@ -45,7 +47,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: app/.nvmrc
+          node-version-file: .nvmrc
 
       # Pinned to the exact version verified locally during Phase 0
       # development (docs/DEPLOYMENT_STRATEGY.md records this) -- never

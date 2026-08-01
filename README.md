@@ -57,7 +57,8 @@ matter of enabling sign-ups, not rearchitecting the schema or the pipeline. See
 
 Prerequisites:
 
-- Node.js (version pinned in [app/.nvmrc](app/.nvmrc))
+- Node.js `22.23.1` (the root [.nvmrc](.nvmrc) is authoritative). Run `nvm use` from the
+  repository root before `npm ci`; the frontend package declares the same engine.
 - A Docker-compatible container runtime. This project uses **Colima** (Docker CLI + Colima, via
   Homebrew) rather than Docker Desktop — see [docs/DEPLOYMENT_STRATEGY.md](docs/DEPLOYMENT_STRATEGY.md)
   for why, including a real network-exposure issue found and fixed during setup.
