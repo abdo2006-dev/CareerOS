@@ -5,10 +5,10 @@ without application to this system.
 
 ## 1. What this system holds
 
-Resume content, education/employment history, skills, application records, saved job
-descriptions, and third-party public content (opportunity postings). The resume and profile data
-in particular is sensitive personal data the user would not want exposed to anyone else, including
-a future second user of the same system.
+Education/employment history, skills, project evidence, preferences, minimized work eligibility,
+application records, saved job descriptions, and third-party public content (opportunity postings).
+Resume content is deferred to Phase 1B. Profile data is sensitive personal data the user would not
+want exposed to anyone else, including a future second user of the same system.
 
 ## 2. Authentication
 
@@ -73,6 +73,11 @@ multi-user-later" claim in the project brief; it is not just an aspiration.
   human.
 
 ## 5. Resume and application data privacy
+
+**Phase boundary**: Phase 1A collects only manual profile data. It records no resume file,
+extraction output, imported suggestion, or extraction-specific provenance column. Phase 1B must
+keep parsed suggestions separate from confirmed records and revisit field/suggestion-level
+provenance; a row-level manual marker does not solve mixed-origin data.
 
 - Resumes stored in a private Supabase Storage bucket; access only via short-lived signed URLs
   generated server-side (by the ingestion job) or via RLS-scoped client requests — never a public
@@ -168,3 +173,8 @@ Only fields that serve a stated product requirement (see
 (e.g., no reason to ever collect government ID numbers, financial information, or health data) is
 requested by this product, and no such field should ever be added without updating this document
 first.
+
+For work eligibility, the permitted Phase 1A representation is only a self-reported structured
+state, optional weekly-hour limit, and last confirmation time. Passport numbers, permit scans,
+government identifiers, immigration narratives, and legal advice are explicitly out of scope; see
+[ADR-015](adr/ADR-015-minimized-work-eligibility-representation.md).

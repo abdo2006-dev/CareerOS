@@ -25,22 +25,28 @@ process.
 save it (RLS-permitted), sign out — verified both by automated tests and by hand in a real
 browser against the real local stack. No opportunity data yet.
 
-## Phase 1 — Profile
+## Phase 1A — Structured manual career profile
 
-- Resume upload → Storage → scheduled parsing job → draft profile → manual review/correction UI.
-- Full profile CRUD: add `work_experience`, `projects`, `skills_catalog`, `user_skills`,
-  `user_languages`, `preferences` (all deferred from Phase 0 — see
-  [DATA_MODEL.md](DATA_MODEL.md)), plus the fuller `profiles`/`education_entries` field sets
-  (`work_eligibility`, `expected_graduation`, `source` provenance) not needed to prove Phase 0's
-  RLS pattern.
-- The resume-parsing job implements the atomic-claim and lease-timeout pattern from
-  [DATA_FLOW.md](DATA_FLOW.md#2-resume-upload-and-profile-extraction-flow) from the start, and the
-  UI ships with explicit `pending` / `processing` / `completed` / `failed` states — this is not a
-  hardening step added later, since a fake "instant" UI would misrepresent how the system actually
-  behaves (see [ARCHITECTURE.md](ARCHITECTURE.md#7-github-actions-reliability-characteristics-read-before-relying-on-cadence)).
+- Full section-based CRUD for the logical profile domain in [DATA_MODEL.md](DATA_MODEL.md):
+  education, experience/research, projects/links, skills/evidence, languages, preferences,
+  targets, and minimized work eligibility.
+- Deterministic completeness using [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md),
+  exact grants/RLS, and the Phase 1A tests in [TESTING_STRATEGY.md](TESTING_STRATEGY.md).
+- Multiple bookmarkable profile pages justify React Router; no dependency is installed in this
+  planning PR. TanStack Query remains deferred until its documented trigger occurs.
 
-**Exit condition**: Workflow 1 in [USER_WORKFLOWS.md](USER_WORKFLOWS.md) works end to end with the
-real user's real resume, including a visible, honest processing-state transition.
+**Exit condition**: Workflow 1 works through manual entry only, with independent section saves,
+actionable completeness, and verified cross-user isolation.
+
+## Phase 1B — Resume intake and extraction drafts
+
+- Private resume storage, upload, scheduled parsing, and separately reviewable extraction
+  suggestions only after Phase 1A is confirmed stable.
+- Explicit acceptance, correction, and rejection; no extraction silently overwrites confirmed
+  profile data. Revisit field/suggestion-level provenance at implementation time.
+
+**Exit condition**: a resume produces a truthful, reviewable draft without altering confirmed
+records unless the user explicitly accepts a change.
 
 ## Phase 2 — First ingestion pipeline, unscored
 

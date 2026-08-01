@@ -68,7 +68,25 @@ mocked:
   unintended shifts.
 - **Eligibility-rule tests are exhaustive by design** — because these are binary gates with
   outsized consequences (an eligible candidate wrongly marked ineligible is filtered out of view),
-  each rule gets explicit positive and negative test cases.
+each rule gets explicit positive and negative test cases.
+
+## Phase 1A profile implementation tests (future)
+
+- **Migration structure tests**: exact tables, direct `user_id` ownership, required foreign keys,
+  ownership-safe composite parent references, constraints, timestamps, and no authoritative
+  `profile_complete` column/behavior.
+- **Exact permission tests**: revoke-then-grant sets, exact RLS-policy names/predicates, no anon
+  grants, owner CRUD, cross-user isolation, forged-owner insert, and ownership-rewrite denial.
+- **Composite-parent bypass tests**: user A must not attach user B's project, experience,
+  education, profile link, preference container, or skill claim by knowing its UUID.
+- **Shared catalog tests**: authenticated read succeeds; INSERT/UPDATE/DELETE of canonical
+  skills, aliases, areas, and roles fails; private custom labels never enter shared aggregation.
+- **Real API tests**: Auth → JWT → PostgREST tests cover the same positive and negative cases,
+  rather than relying only on pgTAP.
+- **Frontend tests**: validate forms, independent section save/delete behavior, state handling,
+  accessibility-focused behavior, and the language-neutral vectors in
+  [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md). Fixtures must be synthetic and
+  public-safe; Phase 0 regressions remain required.
 
 ## 4. Adapter and scheduled-job testing
 

@@ -57,10 +57,9 @@ both this file and its corresponding test.
 
 ## Profile domain (user-owned)
 
-**Status**: `profiles` and `education_entries` rows below are implemented and pgTAP-tested as of
-Phase 0 (see [DATA_MODEL.md](DATA_MODEL.md)); `work_experience`, `projects`, `user_skills`,
-`user_languages`, `preferences`, and `skills_catalog` are not yet built (Phase 1) — their rows
-here describe the intended, not-yet-implemented policy.
+**Status**: `profiles` and `education_entries` are implemented and pgTAP-tested as of Phase 0.
+All other rows in this profile-domain section are proposed Phase 1A policy, not schema. Phase 1B
+resume/suggestion tables are intentionally not designed here.
 
 Every table's owner column is literally named `user_id` (see [AGENTS.md](../AGENTS.md)) — child
 tables reference the owning user via a direct `user_id` foreign key to `profiles.user_id`, never
@@ -68,12 +67,23 @@ via a renamed column like `profile_id`. The implemented predicate form is
 `(select auth.uid()) = user_id` (wrapping `auth.uid()` in a `select` lets Postgres evaluate it
 once per statement rather than once per row — the currently-recommended, non-deprecated pattern).
 
-| Table(s) | Owner / data type | Browser SELECT | Browser INSERT | Browser UPDATE | Browser DELETE | Service-role | Expected RLS predicate | Anon access | Required isolation test | Sensitivity |
+| Table(s) | Category / owner | Browser SELECT | Browser INSERT | Browser UPDATE | Browser DELETE | Service-role | Expected RLS predicate | Anon access | Required isolation and ownership-bypass test | Sensitivity |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `profiles`, `education_entries`, `work_experience`, `projects`, `user_skills`, `user_languages`, `preferences` | One row/set per user; every table's owner column is `user_id` | Own rows only | Own rows only | Own rows only | Own rows only | Full (admin/export/account-deletion tooling) | `(select auth.uid()) = user_id` on every table (`profiles.user_id` is the PK; child tables' `user_id` is a direct FK to it) | No | User A cannot SELECT, INSERT (for A's `user_id`), UPDATE, or DELETE any row owned by user B, including by rewriting a child row's `user_id` to claim it; User A has full CRUD on their own rows | High (`profiles.work_eligibility`, once added in Phase 1, reveals immigration/visa status — treat as Very High for that column specifically) |
-| `skills_catalog` | Shared reference data (skill names), not user-owned | All authenticated users | No (service-role only, grown by ingestion/normalization) | No | No | Full | None (public reference table, but still gated behind authentication for MVP) | No | Any authenticated user can read the full catalog; no authenticated user can write to it | Low |
+| `profiles`, `education_entries`, `work_experience`, `projects`, `profile_links`, `user_skills`, `user_languages`, `preferences`, `target_companies` | User-owned; direct `user_id` | Own only | Own only | Own only | Own only | Full for maintenance/export/account deletion | `(select auth.uid()) = user_id` for `USING` and `WITH CHECK` | No | Owner CRUD; cross-user SELECT/UPDATE/DELETE denial; forged `user_id` insert; ownership-rewrite denial | High (`profile_links`/targets Medium) |
+| `preference_locations`, `user_target_engineering_areas`, `user_target_role_types` | User-owned relation; direct `user_id` | Own only | Own only | Own only where applicable | Own only | Full | Direct owner predicate plus composite parent `(user_id, parent_id)` validation | No | Owner CRUD; all cross-user denials; forged owner; cannot attach a valid user A row to B's preferences/profile | Medium |
+| `project_skills` | User-owned relation; direct `user_id` | Own only | Own only | N/A or own only | Own only | Full | Direct owner predicate plus `(user_id, project_id)` composite FK | No | User A cannot attach B's project to A's skill or vice versa, even when UUID is known; owner CRUD | High |
+| `skill_evidence` | User-owned evidence; direct `user_id` | Own only | Own only | Own only | Own only | Full | Direct owner predicate plus same-user composite references to claim and target | No | User A cannot create evidence on B's claim/project/experience/education/link; cannot rewrite owner or target; owner CRUD | High |
+| `work_eligibility` | **Highly sensitive user-owned**; direct `user_id` | Own only | Own only | Own only | Own only | Full only for explicit maintenance/export/deletion | Direct owner predicate | No | Owner CRUD; cross-user and forged-owner denials; anon 403; API-path JWT test | Very High |
+| `skills_catalog`, `skill_aliases`, `engineering_areas`, `role_types` | Shared authenticated-readable reference data | All authenticated users | No | No | No | Full; service maintains canonical values | No owner predicate; grant SELECT only to authenticated | No | Authenticated read succeeds; authenticated INSERT/UPDATE/DELETE fails at grant; service maintenance path succeeds | Low |
+
+Private `user_skills.custom_label` values are never copied into shared catalogs or market
+aggregation automatically. Every future migration must include exact grants, RLS policies, and the
+listed pgTAP plus real Auth/JWT/PostgREST checks; no frontend permission check substitutes for them.
 
 ## Resume domain (user-owned)
+
+**Status: Phase 1B deferred.** This retained future-policy sketch is not authorization for a
+Phase 1A migration; resume/suggestion design must be revisited with field-level provenance.
 
 | Table | Owner / data type | Browser SELECT | Browser INSERT | Browser UPDATE | Browser DELETE | Service-role | Expected RLS predicate | Anon access | Required isolation test | Sensitivity |
 |---|---|---|---|---|---|---|---|---|---|---|
