@@ -8,7 +8,8 @@ hackathons, scholarships, and other resume-building opportunities; compares them
 detailed saved profile; explains where the student is competitive and where they are not; and
 tracks the full lifecycle from "found it" to "applied" to "interviewed."
 
-Phase 0 is implemented, and the first Phase 1A profile-core/education slice is in progress: a React/TypeScript/Vite frontend, a local Supabase stack
+Phase 0 is implemented, and the first Phase 1A profile-core/education slice adds routed manual
+profile and primary-education workflows: a React/TypeScript/Vite frontend, a local Supabase stack
 (Postgres/Auth/PostgREST), the initial `profiles`/`education_entries` schema with Row Level
 Security, and CI. See [Local development setup](#local-development-setup) below to run it.
 

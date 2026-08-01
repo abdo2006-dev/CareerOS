@@ -71,6 +71,8 @@ the section revision; “stale” means it does not.
 | `all-technical-skills-evidenced` | Two technical claims, each with one valid typed evidence row. | `technical_skill` and `skill_evidence` are `present`; lacking count 0. |
 | `eligibility-stale` | Work-eligibility row exists, but its confirmation or section review predates a change. | `eligibility_reviewed = unconfirmed`. |
 
-The next implementation vertical slice evaluates only checks whose inputs exist in that slice; all
-other checks are reported as **not yet implemented by the product**, not as user omissions. The
-full v2 evaluation begins only after its remaining Phase 1A tables exist.
+The implemented first vertical slice exposes `profile-completeness/v2-slice-education`. It evaluates
+only `basic_profile_review`, `primary_education`, `degree_year`, `graduation_timing`, and
+`education_review`, using `present`, `missing`, and `unconfirmed`. All remaining v2 inputs are a
+UI-only `not_implemented` availability state, never a user omission or a percentage. The full v2
+evaluation begins only after its remaining Phase 1A tables exist.
