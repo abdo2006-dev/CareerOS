@@ -24,6 +24,22 @@ vi.mock('./lib/supabaseClient', () => ({
   },
 }))
 
+vi.mock('./lib/profileRepository', () => ({
+  profileRepository: {
+    get: () => Promise.resolve({ data: null, error: null }),
+  },
+}))
+vi.mock('./lib/educationRepository', () => ({
+  educationRepository: {
+    list: () => Promise.resolve({ data: [], error: null }),
+  },
+}))
+vi.mock('./lib/profileReviewRepository', () => ({
+  profileReviewRepository: {
+    state: () => Promise.resolve({ data: [], error: null }),
+  },
+}))
+
 describe('App', () => {
   beforeEach(() => {
     mockGetSession.mockReset()

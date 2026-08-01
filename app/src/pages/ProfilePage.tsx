@@ -1,168 +1,137 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { Link } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { educationRepository } from '../lib/educationRepository'
+import { profileRepository } from '../lib/profileRepository'
+import { profileReviewRepository } from '../lib/profileReviewRepository'
+import type { SectionState } from '../lib/profileTypes'
 
-interface ProfileRow {
-  user_id: string
-  headline: string | null
+function reviewed(
+  state: SectionState[] | null,
+  section: SectionState['section_key'],
+) {
+  const item = state?.find((entry) => entry.section_key === section)
+  return item?.reviewed_content_revision === item?.content_revision
 }
 
-type Status = 'loading' | 'loaded' | 'empty' | 'error'
-
 export function ProfilePage() {
-  const { session, signOut } = useAuth()
+  const { session } = useAuth()
   const userId = session?.user.id
+  const [status, setStatus] = useState<'loading' | 'empty' | 'ready' | 'error'>(
+    'loading',
+  )
+  const [state, setState] = useState<SectionState[] | null>(null)
+  const [hasPrimary, setHasPrimary] = useState(false)
+  const [degreeYear, setDegreeYear] = useState(false)
+  const [graduation, setGraduation] = useState(false)
 
-  const [status, setStatus] = useState<Status>('loading')
-  const [headline, setHeadline] = useState('')
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [signOutError, setSignOutError] = useState<string | null>(null)
-
-  const loadProfile = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!userId) return
     setStatus('loading')
-    setErrorMessage(null)
-
-    // RLS scopes this to the signed-in user's own row; a missing profile
-    // shows an "empty" state here, never another user's data -- there is no
-    // code path in this query that could return a row belonging to anyone
-    // else, regardless of what this component does with the result.
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('user_id, headline')
-      .eq('user_id', userId)
-      .maybeSingle<ProfileRow>()
-
-    if (error) {
-      setStatus('error')
-      setErrorMessage(error.message)
-      return
-    }
-    if (!data) {
-      setStatus('empty')
-      return
-    }
-    setHeadline(data.headline ?? '')
-    setStatus('loaded')
+    const [profile, education, sections] = await Promise.all([
+      profileRepository.get(userId),
+      educationRepository.list(userId),
+      profileReviewRepository.state(userId),
+    ])
+    if (profile.error || education.error || sections.error)
+      return setStatus('error')
+    if (!profile.data) return setStatus('empty')
+    const primary = education.data.find((entry) => entry.is_primary)
+    setHasPrimary(Boolean(primary))
+    setDegreeYear(Boolean(primary?.degree_year))
+    setGraduation(
+      Boolean(
+        primary?.expected_graduation_month && primary?.expected_graduation_year,
+      ),
+    )
+    setState(sections.data)
+    setStatus('ready')
   }, [userId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount pattern; state updates land asynchronously once the request resolves
-    void loadProfile()
-  }, [loadProfile])
-
-  async function handleCreateProfile() {
-    if (!userId) return
-    setSaving(true)
-    setErrorMessage(null)
-
-    const { error } = await supabase
-      .from('profiles')
-      .insert({ user_id: userId, headline: '' })
-
-    setSaving(false)
-    if (error) {
-      setStatus('error')
-      setErrorMessage(error.message)
-      return
-    }
-    await loadProfile()
-  }
-
-  async function handleSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!userId) return
-    setSaving(true)
-    setSaveMessage(null)
-    setErrorMessage(null)
-
-    // .select() makes the affected rows come back in `data` so a save that
-    // matches zero rows (RLS-filtered, or the row was deleted concurrently)
-    // can be told apart from an actual save -- PostgREST returns 200 with no
-    // error in both cases, so `error` alone is not enough to confirm success.
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ headline })
-      .eq('user_id', userId)
-      .select('user_id')
-
-    setSaving(false)
-    if (error) {
-      setErrorMessage(error.message)
-      return
-    }
-    if (!data || data.length === 0) {
-      await loadProfile()
-      return
-    }
-    setSaveMessage('Saved.')
-  }
-
-  async function handleSignOut() {
-    setSignOutError(null)
-    const { error } = await signOut()
-    if (error) {
-      setSignOutError(error)
-    }
-  }
-
-  return (
-    <main>
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-        }}
-      >
-        <h1>Your profile</h1>
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous initial load updates state after the repository resolves
+    void load()
+  }, [load])
+  if (status === 'loading')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p>Loading…</p>
+      </section>
+    )
+  if (status === 'error')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p role="alert">Your profile could not be loaded.</p>
+        <button type="button" onClick={() => void load()}>
+          Retry
+        </button>
+      </section>
+    )
+  if (status === 'empty')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p>No profile yet.</p>
         <button
           type="button"
-          className="secondary"
-          onClick={() => void handleSignOut()}
+          onClick={() =>
+            userId && void profileRepository.create(userId).then(load)
+          }
         >
-          Sign out
+          Create profile
         </button>
-      </header>
-
-      {signOutError && <p role="alert">{signOutError}</p>}
-
-      {status === 'loading' && <p>Loading…</p>}
-
-      {status === 'error' && <p role="alert">{errorMessage}</p>}
-
-      {status === 'empty' && (
-        <div>
-          <p>No profile yet.</p>
-          <button
-            type="button"
-            onClick={() => void handleCreateProfile()}
-            disabled={saving}
-          >
-            {saving ? 'Creating…' : 'Create profile'}
-          </button>
-        </div>
-      )}
-
-      {status === 'loaded' && (
-        <form onSubmit={handleSave}>
-          <div>
-            <label htmlFor="headline">Headline</label>
-            <input
-              id="headline"
-              name="headline"
-              value={headline}
-              onChange={(event) => setHeadline(event.target.value)}
-            />
-          </div>
-          <button type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {saveMessage && <p>{saveMessage}</p>}
-        </form>
-      )}
-    </main>
+      </section>
+    )
+  const checks = [
+    [
+      'Basic profile review',
+      reviewed(state, 'basic_profile'),
+      '/profile/basic',
+      'Review basic profile',
+    ],
+    [
+      'Primary education',
+      hasPrimary,
+      '/profile/education',
+      'Add or select primary education',
+    ],
+    ['Degree year', degreeYear, '/profile/education', 'Add degree year'],
+    [
+      'Expected graduation',
+      graduation,
+      '/profile/education',
+      'Add expected graduation timing',
+    ],
+    [
+      'Education review',
+      reviewed(state, 'education'),
+      '/profile/education',
+      'Review education',
+    ],
+  ]
+  return (
+    <section>
+      <h2>Your profile</h2>
+      <p>Complete the implemented profile details below.</p>
+      <ul>
+        {checks.map(([label, ok, href, action]) => (
+          <li key={label as string}>
+            <strong>{label as string}:</strong>{' '}
+            {ok ? (
+              'Present'
+            ) : (
+              <Link to={href as string}>{action as string}</Link>
+            )}
+          </li>
+        ))}
+      </ul>
+      <h3>Not yet available</h3>
+      <p>
+        Experience, skills, languages, preferences, targets, and work
+        eligibility are not yet available in CareerOS.
+      </p>
+    </section>
   )
 }

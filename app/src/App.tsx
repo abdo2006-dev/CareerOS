@@ -7,6 +7,9 @@ import {
 import { RouterProvider } from 'react-router/dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ProfileLayout } from './pages/ProfileLayout'
+import { BasicProfilePage } from './pages/BasicProfilePage'
+import { EducationEditorPage } from './pages/EducationEditorPage'
+import { EducationListPage } from './pages/EducationListPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SignInPage } from './pages/SignInPage'
 
@@ -87,10 +90,13 @@ const router = createBrowserRouter([
         element: <ProfileLayout />,
         children: [
           { index: true, element: <ProfilePage /> },
-          { path: 'basic', element: <ProfilePage /> },
-          { path: 'education', element: <ProfilePage /> },
-          { path: 'education/new', element: <ProfilePage /> },
-          { path: 'education/:educationId/edit', element: <ProfilePage /> },
+          { path: 'basic', element: <BasicProfilePage /> },
+          { path: 'education', element: <EducationListPage /> },
+          { path: 'education/new', element: <EducationEditorPage /> },
+          {
+            path: 'education/:educationId/edit',
+            element: <EducationEditorPage />,
+          },
         ],
       },
     ],
