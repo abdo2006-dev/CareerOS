@@ -81,9 +81,21 @@ erDiagram
 
 ## Profile domain (Phase 1A proposal; user-owned unless marked shared)
 
-**Implementation status**: only the deliberately minimal Phase 0 `profiles` and
-`education_entries` migration exists. Everything in this section is a Phase 1A logical target,
-not implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
+**Implementation status**: the first Phase 1A vertical slice is implemented: refined
+`profiles`, refined `education_entries`, and section freshness/review rows for `basic_profile`
+and `education`. The remaining profile-domain tables below remain logical targets, not
+implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
+
+### Implemented profile-core migration note
+
+The Phase 0 `profiles.degree_program`, `profiles.degree_year`, and
+`profiles.profile_complete` columns are retained temporarily as deprecated compatibility fields.
+They are not authoritative and the browser does not write them. A forward migration copies a
+legacy degree year only when its profile has exactly one existing education row and that target
+field is null; it never chooses a primary row, infers a status, creates an institution, or maps
+the ambiguous legacy degree-program text into `degree` or `field`. Existing profiles begin with
+`basic_profile` and `education` revisions at zero and no reviews. New profile creation initializes
+those rows transactionally.
 
 **Ownership rule (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table has direct
 `user_id`, including association tables. The root `profiles.user_id` references `auth.users(id)`;
