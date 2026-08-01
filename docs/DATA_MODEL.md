@@ -97,6 +97,10 @@ the ambiguous legacy degree-program text into `degree` or `field`. Existing prof
 `basic_profile` and `education` revisions at zero and no reviews. New profile creation initializes
 those rows transactionally.
 
+`last_confirmed_at` is nullable for migrated profile and education rows: `NULL` means the legacy
+row has not yet been manually confirmed in the current profile model. New manual creation defaults
+to the current timestamp, and later manual content edits refresh it.
+
 **Ownership rule (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table has direct
 `user_id`, including association tables. The root `profiles.user_id` references `auth.users(id)`;
 child user-owned rows generally reference `profiles(user_id)` through that same direct `user_id`.

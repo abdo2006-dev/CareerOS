@@ -12,7 +12,7 @@ alter table public.profiles
   add column preferred_name text,
   add column created_via text not null default 'manual',
   add column updated_at timestamptz not null default now(),
-  add column last_confirmed_at timestamptz not null default now(),
+  add column last_confirmed_at timestamptz default now(),
   add constraint profiles_created_via_check check (created_via in ('manual', 'migration'));
 
 alter table public.education_entries
@@ -23,7 +23,7 @@ alter table public.education_entries
   add column is_primary boolean not null default false,
   add column created_via text not null default 'manual',
   add column updated_at timestamptz not null default now(),
-  add column last_confirmed_at timestamptz not null default now(),
+  add column last_confirmed_at timestamptz default now(),
   add constraint education_entries_degree_year_check check (degree_year is null or degree_year between 1 and 10),
   add constraint education_entries_graduation_month_check check (expected_graduation_month is null or expected_graduation_month between 1 and 12),
   add constraint education_entries_graduation_year_check check (expected_graduation_year is null or expected_graduation_year between 2000 and 2100),
@@ -85,9 +85,9 @@ comment on column public.profiles.profile_complete is
 comment on column public.profiles.created_via is
   'How this current-format profile row entered the system: manual or migration.';
 comment on column public.profiles.last_confirmed_at is
-  'Last explicit manual profile-content creation or edit; separate from section review.';
+  'Last explicit manual profile-content creation or edit; NULL means a migrated row has not yet been manually confirmed in the current profile model.';
 comment on column public.education_entries.last_confirmed_at is
-  'Last explicit manual education-content creation or edit; separate from section review.';
+  'Last explicit manual education-content creation or edit; NULL means a migrated row has not yet been manually confirmed in the current profile model.';
 
 create unique index education_entries_one_primary_per_user_idx
   on public.education_entries (user_id)

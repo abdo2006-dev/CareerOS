@@ -115,6 +115,9 @@ cd app && npm ci && npm run lint && npm run typecheck && npm run test && npm run
 # Database: pgTAP RLS tests, run against the real local Postgres instance
 supabase test db
 
+# Migration compatibility: Phase 0 schema/data -> Phase 1A migration
+./supabase/scripts/migration-compatibility-test.sh
+
 # API-path integration test: real Auth -> JWT -> PostgREST -> RLS -> Postgres,
 # using temporary users (each with their own randomly generated per-run
 # password) that are always cleaned up afterward
