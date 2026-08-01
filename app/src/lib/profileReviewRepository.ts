@@ -1,6 +1,17 @@
 import { supabase } from './supabaseClient'
 import type { SectionState } from './profileTypes'
 
+export function reviewStatus(
+  state: SectionState[] | null,
+  section: SectionState['section_key'],
+): 'current' | 'stale' | 'not_reviewed' {
+  const item = state?.find((entry) => entry.section_key === section)
+  if (!item || item.reviewed_content_revision === null) return 'not_reviewed'
+  return item.reviewed_content_revision === item.content_revision
+    ? 'current'
+    : 'stale'
+}
+
 export const profileReviewRepository = {
   async state(userId: string) {
     const [revisions, reviews] = await Promise.all([

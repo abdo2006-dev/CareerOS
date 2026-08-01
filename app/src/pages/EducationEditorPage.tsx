@@ -22,10 +22,23 @@ export function EducationEditorPage() {
   const [values, setValues] = useState<Record<string, string>>(empty)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
+  const [loadState, setLoadState] = useState<
+    'loading' | 'loaded' | 'missing' | 'error'
+  >(educationId ? 'loading' : 'loaded')
   const load = useCallback(async () => {
     if (!educationId) return
     const result = await educationRepository.get(educationId)
-    if (result.error || !result.data) {
+    if (result.error) {
+      setLoadState(result.error.code === 'PGRST116' ? 'missing' : 'error')
+      setMessage(
+        result.error.code === 'PGRST116'
+          ? 'This education entry no longer exists.'
+          : 'This education entry could not be loaded.',
+      )
+      return
+    }
+    if (!result.data) {
+      setLoadState('missing')
       setMessage('This education entry no longer exists.')
       return
     }
@@ -43,6 +56,7 @@ export function EducationEditorPage() {
       start_date: entry.start_date ?? '',
       end_date: entry.end_date ?? '',
     })
+    setLoadState('loaded')
   }, [educationId])
   useEffect(() => {
     void load()
@@ -54,7 +68,7 @@ export function EducationEditorPage() {
     event.preventDefault()
     const next = validateEducation(values)
     setErrors(next)
-    if (Object.keys(next).length) return
+    if (Object.keys(next).length || loadState !== 'loaded') return
     const input = normalizeEducation(values)
     const result = educationId
       ? await educationRepository.update(educationId, input)
@@ -84,6 +98,23 @@ export function EducationEditorPage() {
       )}
     </div>
   )
+  if (loadState === 'loading')
+    return (
+      <section>
+        <h2>Edit education</h2>
+        <p>Loading…</p>
+      </section>
+    )
+  if (loadState === 'missing' || loadState === 'error')
+    return (
+      <section>
+        <h2>Edit education</h2>
+        <p role="alert">{message}</p>
+        <p>
+          <Link to="/profile/education">Return to education</Link>
+        </p>
+      </section>
+    )
   return (
     <section>
       <h2>{educationId ? 'Edit education' : 'Add education'}</h2>

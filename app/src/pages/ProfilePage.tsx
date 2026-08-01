@@ -4,15 +4,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { educationRepository } from '../lib/educationRepository'
 import { profileRepository } from '../lib/profileRepository'
 import { profileReviewRepository } from '../lib/profileReviewRepository'
-import type { SectionState } from '../lib/profileTypes'
-
-function reviewed(
-  state: SectionState[] | null,
-  section: SectionState['section_key'],
-) {
-  const item = state?.find((entry) => entry.section_key === section)
-  return item?.reviewed_content_revision === item?.content_revision
-}
+import type { EducationEntry, SectionState } from '../lib/profileTypes'
+import { evaluateEducationSlice } from '../lib/profileCompleteness'
 
 export function ProfilePage() {
   const { session } = useAuth()
@@ -21,9 +14,8 @@ export function ProfilePage() {
     'loading',
   )
   const [state, setState] = useState<SectionState[] | null>(null)
-  const [hasPrimary, setHasPrimary] = useState(false)
-  const [degreeYear, setDegreeYear] = useState(false)
-  const [graduation, setGraduation] = useState(false)
+  const [entries, setEntries] = useState<EducationEntry[]>([])
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -36,14 +28,7 @@ export function ProfilePage() {
     if (profile.error || education.error || sections.error)
       return setStatus('error')
     if (!profile.data) return setStatus('empty')
-    const primary = education.data.find((entry) => entry.is_primary)
-    setHasPrimary(Boolean(primary))
-    setDegreeYear(Boolean(primary?.degree_year))
-    setGraduation(
-      Boolean(
-        primary?.expected_graduation_month && primary?.expected_graduation_year,
-      ),
-    )
+    setEntries(education.data)
     setState(sections.data)
     setStatus('ready')
   }, [userId])
@@ -74,55 +59,39 @@ export function ProfilePage() {
       <section>
         <h2>Your profile</h2>
         <p>No profile yet.</p>
+        {createError && <p role="alert">{createError}</p>}
         <button
           type="button"
           onClick={() =>
-            userId && void profileRepository.create(userId).then(load)
+            userId &&
+            void profileRepository
+              .create(userId)
+              .then((result) =>
+                result.error
+                  ? setCreateError(
+                      'Profile could not be created. Please try again.',
+                    )
+                  : load(),
+              )
           }
         >
           Create profile
         </button>
       </section>
     )
-  const checks = [
-    [
-      'Basic profile review',
-      reviewed(state, 'basic_profile'),
-      '/profile/basic',
-      'Review basic profile',
-    ],
-    [
-      'Primary education',
-      hasPrimary,
-      '/profile/education',
-      'Add or select primary education',
-    ],
-    ['Degree year', degreeYear, '/profile/education', 'Add degree year'],
-    [
-      'Expected graduation',
-      graduation,
-      '/profile/education',
-      'Add expected graduation timing',
-    ],
-    [
-      'Education review',
-      reviewed(state, 'education'),
-      '/profile/education',
-      'Review education',
-    ],
-  ]
+  const checks = evaluateEducationSlice(entries, state ?? [])
   return (
     <section>
       <h2>Your profile</h2>
       <p>Complete the implemented profile details below.</p>
       <ul>
-        {checks.map(([label, ok, href, action]) => (
-          <li key={label as string}>
-            <strong>{label as string}:</strong>{' '}
-            {ok ? (
+        {checks.map((check) => (
+          <li key={check.id}>
+            <strong>{check.id.replaceAll('_', ' ')}:</strong>{' '}
+            {check.outcome === 'present' ? (
               'Present'
             ) : (
-              <Link to={href as string}>{action as string}</Link>
+              <Link to={check.href}>{check.action}</Link>
             )}
           </li>
         ))}

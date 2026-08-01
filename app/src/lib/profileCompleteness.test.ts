@@ -32,4 +32,36 @@ describe('education completeness slice', () => {
       checks.find((check) => check.id === 'education_review'),
     ).toMatchObject({ outcome: 'unconfirmed' })
   })
+
+  it('never treats missing, null, or stale review state as current', () => {
+    expect(
+      evaluateEducationSlice([], []).find(
+        (check) => check.id === 'basic_profile_review',
+      )?.outcome,
+    ).toBe('unconfirmed')
+    expect(
+      evaluateEducationSlice(
+        [],
+        [
+          {
+            section_key: 'basic_profile',
+            content_revision: 2,
+            reviewed_content_revision: null,
+          },
+        ],
+      ).find((check) => check.id === 'basic_profile_review')?.outcome,
+    ).toBe('unconfirmed')
+    expect(
+      evaluateEducationSlice(
+        [],
+        [
+          {
+            section_key: 'basic_profile',
+            content_revision: 2,
+            reviewed_content_revision: 1,
+          },
+        ],
+      ).find((check) => check.id === 'basic_profile_review')?.outcome,
+    ).toBe('unconfirmed')
+  })
 })

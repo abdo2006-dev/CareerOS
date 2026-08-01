@@ -51,10 +51,32 @@ export function validateEducation(values: Record<string, string>): FieldErrors {
     errors.degree = 'Degree must be 160 characters or fewer.'
   if (trimmed(values.field).length > 160)
     errors.field = 'Field must be 160 characters or fewer.'
+  const degreeYear = Number(values.degree_year)
+  if (
+    values.degree_year &&
+    (!Number.isInteger(degreeYear) || degreeYear < 1 || degreeYear > 10)
+  )
+    errors.degree_year = 'Degree year must be between 1 and 10.'
   const month = values.expected_graduation_month
   const year = values.expected_graduation_year
   if ((month === '') !== (year === ''))
     errors.graduation = 'Enter both graduation month and year, or neither.'
+  if (
+    month &&
+    (!Number.isInteger(Number(month)) ||
+      Number(month) < 1 ||
+      Number(month) > 12)
+  )
+    errors.expected_graduation_month =
+      'Graduation month must be between 1 and 12.'
+  if (
+    year &&
+    (!Number.isInteger(Number(year)) ||
+      Number(year) < 2000 ||
+      Number(year) > 2100)
+  )
+    errors.expected_graduation_year =
+      'Graduation year must be between 2000 and 2100.'
   if (values.education_status !== 'current' && (month || year))
     errors.graduation = 'Expected graduation is only for current education.'
   if (values.education_status === 'current' && values.end_date)
@@ -67,5 +89,13 @@ export function validateEducation(values: Record<string, string>): FieldErrors {
     values.end_date < values.start_date
   )
     errors.end_date = 'End date cannot precede start date.'
+  if (
+    values.start_date &&
+    month &&
+    year &&
+    `${year}-${month.padStart(2, '0')}-01` <
+      `${values.start_date.slice(0, 7)}-01`
+  )
+    errors.graduation = 'Expected graduation cannot precede the start month.'
   return errors
 }

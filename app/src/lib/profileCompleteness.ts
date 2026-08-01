@@ -19,7 +19,11 @@ export interface CompletenessCheck {
 
 function reviewed(state: SectionState[], section: SectionState['section_key']) {
   const item = state.find((entry) => entry.section_key === section)
-  return item?.reviewed_content_revision === item?.content_revision
+  return Boolean(
+    item &&
+    item.reviewed_content_revision !== null &&
+    item.reviewed_content_revision === item.content_revision,
+  )
 }
 
 export function evaluateEducationSlice(

@@ -2,7 +2,10 @@ import { Link } from 'react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { educationRepository } from '../lib/educationRepository'
-import { profileReviewRepository } from '../lib/profileReviewRepository'
+import {
+  profileReviewRepository,
+  reviewStatus,
+} from '../lib/profileReviewRepository'
 import type { EducationEntry } from '../lib/profileTypes'
 
 export function EducationListPage() {
@@ -12,12 +15,18 @@ export function EducationListPage() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [deleting, setDeleting] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [sectionState, setSectionState] = useState<
+    'current' | 'stale' | 'not_reviewed'
+  >('not_reviewed')
   const load = useCallback(async () => {
     if (!userId) return
     setStatus('loading')
     const result = await educationRepository.list(userId)
     if (result.error) return setStatus('error')
     setEntries(result.data)
+    const sections = await profileReviewRepository.state(userId)
+    if (!sections.error)
+      setSectionState(reviewStatus(sections.data, 'education'))
     setStatus('ready')
   }, [userId])
   useEffect(() => {
@@ -69,6 +78,14 @@ export function EducationListPage() {
   return (
     <section>
       <h2>Education</h2>
+      <p>
+        Review status:{' '}
+        {sectionState === 'current'
+          ? 'Reviewed and current'
+          : sectionState === 'stale'
+            ? 'Stale — review again'
+            : 'Not reviewed'}
+      </p>
       <p>
         <Link to="new">Add education</Link>
       </p>
