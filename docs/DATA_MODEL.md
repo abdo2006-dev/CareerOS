@@ -1,10 +1,13 @@
 # Data Model
 
 Status: **proposal**. This is a logical model to guide implementation, not final SQL migrations —
-column types and constraints will be refined when migrations are actually written. All
-user-owned tables include a `user_id` referencing `auth.users(id)` and an RLS policy restricting
-access to `user_id = auth.uid()`; this is what makes the schema multi-tenant-ready from day one
-per [ADR-008](adr/ADR-008-private-first-multi-user-later.md). Shared/global tables (opportunities,
+column types and constraints will be refined when migrations are actually written. Every
+user-owned table carries a direct `user_id` ownership column. `profiles.user_id` directly
+references `auth.users(id)`; child user-owned tables generally reference `profiles(user_id)`
+through their direct `user_id`. RLS compares that direct ownership column with
+`(select auth.uid())`; association tables additionally use ownership-safe composite foreign keys
+where needed. This is what makes the schema multi-tenant-ready from day one per
+[ADR-008](adr/ADR-008-private-first-multi-user-later.md). Shared/global tables (opportunities,
 source listings, sources, market intelligence) are readable by any authenticated user and writable
 only by the service role used by ingestion jobs. The exact permission for every table and storage
 bucket — including the anonymous-access answer — is enumerated exhaustively in
