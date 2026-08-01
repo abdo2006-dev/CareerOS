@@ -1,17 +1,20 @@
 # Data Model
 
 Status: **proposal**. This is a logical model to guide implementation, not final SQL migrations —
-column types and constraints will be refined when migrations are actually written. All
-user-owned tables include a `user_id` referencing `auth.users(id)` and an RLS policy restricting
-access to `user_id = auth.uid()`; this is what makes the schema multi-tenant-ready from day one
-per [ADR-008](adr/ADR-008-private-first-multi-user-later.md). Shared/global tables (opportunities,
+column types and constraints will be refined when migrations are actually written. Every
+user-owned table carries a direct `user_id` ownership column. `profiles.user_id` directly
+references `auth.users(id)`; child user-owned tables generally reference `profiles(user_id)`
+through their direct `user_id`. RLS compares that direct ownership column with
+`(select auth.uid())`; association tables additionally use ownership-safe composite foreign keys
+where needed. This is what makes the schema multi-tenant-ready from day one per
+[ADR-008](adr/ADR-008-private-first-multi-user-later.md). Shared/global tables (opportunities,
 source listings, sources, market intelligence) are readable by any authenticated user and writable
 only by the service role used by ingestion jobs. The exact permission for every table and storage
 bucket — including the anonymous-access answer — is enumerated exhaustively in
 [RLS_POLICY_MATRIX.md](RLS_POLICY_MATRIX.md); this document should not be treated as the
 authoritative permission reference on its own.
 
-## Revision note (this pass)
+## Revision note (Phase 1A architecture pass)
 
 This revision corrects two gaps identified in review:
 
@@ -26,6 +29,11 @@ This revision corrects two gaps identified in review:
    double-counting market statistics. A `source_listings` layer and a conservative
    deduplication design now sit between raw source data and the canonical `opportunities` table.
    See [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md).
+3. Phase 1 is split into **Phase 1A manual structured profile** and **Phase 1B resume intake and
+   extraction drafts** ([ADR-011](adr/ADR-011-manual-profile-before-resume-extraction.md)). The
+   profile model below is a Phase 1A proposal only: it does not create migrations or resume/
+   suggestion structures. `profiles.profile_complete` has no authoritative role; completeness is
+   derived from [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md).
 
 ## Entity-relationship overview
 
@@ -33,11 +41,20 @@ This revision corrects two gaps identified in review:
 erDiagram
     USERS ||--o| PROFILES : has
     PROFILES ||--o{ EDUCATION_ENTRIES : has
+    PROFILES ||--o{ PROFILE_SECTION_REVIEWS : records
+    PROFILES ||--o{ PROFILE_SECTION_REVISIONS : tracks
     PROFILES ||--o{ WORK_EXPERIENCE : has
     PROFILES ||--o{ PROJECTS : has
+    PROFILES ||--o{ PROFILE_LINKS : has
     PROFILES ||--o{ USER_SKILLS : has
+    SKILLS_CATALOG ||--o{ SKILL_ALIASES : has
+    SKILLS_CATALOG ||--o{ USER_SKILLS : claimed_as
+    USER_SKILLS ||--o{ SKILL_EVIDENCE : supported_by
+    PROJECTS ||--o{ PROJECT_SKILLS : uses
     PROFILES ||--o{ USER_LANGUAGES : has
-    PROFILES ||--|| PREFERENCES : has
+    PROFILES ||--o| PREFERENCES : has
+    PREFERENCES ||--o{ PREFERENCE_LOCATIONS : has
+    PROFILES ||--o| WORK_ELIGIBILITY : has
     USERS ||--o{ RESUMES : uploads
     RESUMES ||--o{ RESUME_EXTRACTIONS : produces
 
@@ -62,41 +79,70 @@ erDiagram
     OPPORTUNITIES ||--o{ MARKET_SKILL_MENTIONS : contributes_to
 ```
 
-## Profile domain (user-owned, RLS-protected)
+## Profile domain (Phase 1A proposal; user-owned unless marked shared)
 
-**Implementation status**: `profiles` and `education_entries` are implemented as of Phase 0
-(migration `supabase/migrations/20260726145047_profiles_and_education_entries.sql`), with a
-deliberately minimal Phase 0 field set — the fuller field lists below (`work_eligibility`,
-`expected_graduation`, the `source` provenance column, etc.) are the Phase 1 target, not yet
-built. `work_experience`, `projects`, `skills_catalog`, `user_skills`, `user_languages`, and
-`preferences` are not yet implemented — deferred to Phase 1, since they reuse the same two RLS
-patterns Phase 0 already proves (owned-directly, owned-via-FK) and add no new pattern to justify
-building them before the rest of the profile domain is real.
+**Implementation status**: only the deliberately minimal Phase 0 `profiles` and
+`education_entries` migration exists. Everything in this section is a Phase 1A logical target,
+not implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
 
-**Ownership naming convention (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table's
-owner column is literally named `user_id` — never aliased (e.g. `profile_id`), even on child
-tables that reference `profiles.user_id`. `education_entries.user_id` is a direct FK to
-`profiles.user_id`, not a same-named-but-different column. This is deliberate: aliasing the
-column to `profile_id` while comparing it to `auth.uid()` in RLS policies obscures, at every call
-site, that it is the actual row-ownership key — a future contributor reading `education_entries`
-in isolation should be able to tell who owns a row without knowing it joins to `profiles`.
+**Ownership rule (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table has direct
+`user_id`, including association tables. The root `profiles.user_id` references `auth.users(id)`;
+child user-owned rows generally reference `profiles(user_id)` through that same direct `user_id`.
+User-owned child references use ownership-safe composite foreign keys — e.g. `(user_id,
+project_id)` references a unique `(user_id, id)` on `projects` — or an equivalent constraint. A
+UUID alone never authorizes attaching another user's row. Each manual row may include
+`created_via = manual`, `created_at`, `updated_at`, and meaningful `last_confirmed_at`; this is
+row context, not a Phase 1B provenance solution.
 
-| Table | Key fields | Notes |
-|---|---|---|
-| `profiles` | `user_id` (PK, FK to `auth.users(id)` on delete cascade), `headline`, `degree_program`, `degree_year` (checked 1–10), `profile_complete`, `created_at` | Phase 0 implemented. `work_eligibility`/`expected_graduation` deferred to Phase 1 |
-| `education_entries` | `id` (PK), `user_id` (FK to `profiles.user_id` on delete cascade — **not** `profile_id`), `institution` (not null), `degree`, `field`, `start_date`, `end_date`, `created_at` | Phase 0 implemented. Date-order check constraint. `source` provenance column deferred to Phase 1 |
-| `work_experience` | `id`, `user_id`, `organization`, `role`, `start_date`, `end_date`, `description`, `skills_used[]`, `source` | Not yet implemented — Phase 1 |
-| `projects` | `id`, `user_id`, `title`, `description`, `technologies[]`, `link`, `engineering_areas[]`, `source` | Not yet implemented — Phase 1. Central to project-evidence scoring |
-| `skills_catalog` | `id`, `name`, `category` | Not yet implemented — Phase 1. Shared reference table (not user-owned), seeded + grown from ingestion |
-| `user_skills` | `id`, `user_id`, `skill_id`, `proficiency`, `evidence_project_id` (nullable FK), `source` | Not yet implemented — Phase 1. Links a skill claim to supporting evidence where possible, for explainability |
-| `user_languages` | `id`, `user_id`, `language`, `proficiency_cefr` | Not yet implemented — Phase 1 |
-| `preferences` | `user_id` (PK/FK), `preferred_locations[]`, `bremen_hamburg_priority` (bool), `remote_acceptable`, `target_engineering_areas[]`, `target_opportunity_types[]` | Not yet implemented — Phase 1 |
+| Entity | Purpose / ownership / key | Major foreign keys and constraints | Deletion / RLS / sensitivity / browser access / later consumer |
+|---|---|---|---|
+| `profiles` | One profile identity per user; user-owned; `user_id` PK. | FK `auth.users(id)`; holds only profile-level facts such as preferred name and headline; no authoritative degree program, degree year, or graduation timing; no `profile_complete`. | Cascades from Auth-user deletion; own-row RLS; High; browser SELECT/INSERT/UPDATE only — never direct DELETE; Phase 1A overview, later matching/scoring. |
+| `education_entries` | Education history and authoritative education facts; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; institution, degree, field, `degree_year`, expected graduation month/year, start date, and `education_status`; date/order checks. `is_primary` is optional, but partial unique `(user_id) WHERE is_primary` permits at most one primary entry. A primary normally must be current; explicit status constraint enforces that relationship. Multiple active entries remain allowed. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, matching, evidence. A later forward migration copies Phase 0 `profiles.degree_program`/`degree_year` into the selected or created primary entry before removing their authoritative role. |
+| `profile_section_reviews` | Deliberate review of a UI section, including intentionally empty sections; user-owned; composite PK `(user_id, section_key)`. | `(user_id)` → profiles; controlled keys: `basic_profile`, `education`, `experience`, `projects`, `skills`, `languages`, `preferences`, `work_eligibility`; `reviewed_at`, `reviewed_content_revision`, timestamps. | Cascade from profile; own-row RLS; High; browser CRUD; deterministic review state/completeness. |
+| `profile_section_revisions` | Minimal deletion-safe content freshness state; user-owned metadata; composite PK `(user_id, section_key)`. | Same controlled keys; non-negative monotonic `content_revision`, `updated_at`. Created at revision zero for each section; database-maintained mutation path increments it transactionally on relevant row create/update/delete. | Cascade from profile; own-row RLS; Medium; browser SELECT only; supports review freshness without a reset-flag trigger. |
+| `work_experience` | Employment, research, or volunteering evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; role/organization required; date order; bounded description. | Cascade from profile; own-row RLS; High; browser CRUD; evidence and future matching. |
+| `projects` | User project evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; title required; bounded description; optional safe URL. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, evidence, matching. |
+| `profile_links` | Links to portfolio/GitHub/public work; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; URL scheme/length allowlist; labeled link. | Cascade from profile; own-row RLS; Medium; browser CRUD; evidence and optional enrichment. |
+| `skills_catalog` | Small canonical skill names for matching; shared; `id` PK. | Normalized canonical name unique; bounded category and controlled `is_technical` classification; no user data. | Service maintains; authenticated read only; Low; browser SELECT only; matching and market aggregation. |
+| `skill_aliases` | Controlled alternate names for a canonical skill; shared; `id` PK. | `skill_id` → catalog; normalized alias unique; aliases never point to a custom label. | Cascade from catalog; authenticated read only, service write; Low; browser SELECT only; normalization/matching. |
+| `user_skills` | A user's skill claim, canonical or private custom; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; optional `skill_id` → catalog XOR bounded `custom_label`; unique normalized claim per user; scalar `self_assessment` enum is explicitly self-reported. A claim is technical when its canonical catalog entry is controlled as technical, or a private label is explicitly self-classified technical; private labels remain private. | Cascade from profile; own-row RLS; High; browser CRUD; completeness and future matching. |
+| `project_skills` | Relational project technologies/skills; user-owned association; composite PK `(user_id, project_id, skill_id)`. | `(user_id, project_id)` → projects; `skill_id` → catalog; no arrays. | Cascade from project/catalog as appropriate; own-row plus composite-parent checks; High; browser CRUD; evidence and matching. |
+| `skill_evidence` | Dedicated many-row association: one typed evidence item for a skill claim; user-owned; `id` PK, direct `user_id`. | `(user_id, user_skill_id)` → user skills. Nullable `project_id`, `work_experience_id`, `education_entry_id`, `profile_link_id`, and bounded `manual_note`; a check constraint requires exactly one source. Each relational target has a same-user composite FK. Adding a new evidence category is an intentional schema change for real FK integrity; note content never enters shared aggregation. | Cascade from claim/target; own-row and parent-bypass tests; High; browser CRUD; evidence-first matching. |
+| `user_languages` | Language claims; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; normalized language unique per user; scalar CEFR enum. | Cascade from profile; own-row RLS; High; browser CRUD; readiness and matching. |
+| `preferences` | Optional singleton preference container; user-owned; `user_id` PK. | FK profile; scalar `remote_preference` enum; no location/target arrays. | Zero-or-one until a migration deliberately auto-creates it; cascade from profile; own-row RLS; High; browser CRUD; matching/filtering. |
+| `preference_locations` | Preferred locations relation; user-owned; `id` PK, direct `user_id`. | `(user_id)` → preferences; normalized location + country/region; unique per user. | Cascade from preferences; own-row RLS; Medium; browser CRUD; matching/filtering. |
+| `engineering_areas` | Controlled engineering-area reference; shared; `id` PK. | Unique normalized name. | Service-maintained; authenticated read only; Low; browser SELECT only; targeting and matching. |
+| `role_types` | Controlled role-type reference; shared; `id` PK. | Unique normalized name. | Service-maintained; authenticated read only; Low; browser SELECT only; targeting and matching. |
+| `user_target_engineering_areas` | User's selected areas; user-owned association; composite PK `(user_id, engineering_area_id)`. | `(user_id)` → profile; area → catalog. | Cascade from profile/catalog; own-row RLS; Medium; browser CRUD; readiness and matching. |
+| `user_target_role_types` | User's selected roles; user-owned association; composite PK `(user_id, role_type_id)`. | `(user_id)` → profile; role → catalog. | Cascade from profile/catalog; own-row RLS; Medium; browser CRUD; readiness and matching. |
+| `target_companies` | Optional watchlist; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; normalized company name unique per user; bounded note only. | Cascade from profile; own-row RLS; Medium; browser CRUD; optional enrichment, future discovery. |
+| `work_eligibility` | Optional singleton minimal self-reported eligibility state; user-owned, highly sensitive; `user_id` PK. | FK profile; enum `eligible`/`eligible_with_conditions`/`requires_sponsorship`/`unknown`; optional non-negative weekly limit; `last_confirmed_at` required after review. | Zero-or-one per profile; cascade from profile; own-row RLS; Very High; browser CRUD; readiness and future eligibility checks. |
+
+Relational structures are required for skills, aliases, project technologies, evidence, targets, and
+preferred locations because they support validation, aggregation, future matching, and explainable
+links. Arrays would conceal ownership and parent checks. Scalar enums remain appropriate for
+remote preference, skill self-assessment, and work-eligibility state.
+
+### Review freshness
+
+A section is deliberately reviewed only when its `profile_section_reviews` row exists. Its review
+is current when `reviewed_content_revision` equals the current revision for that section and the
+review time is at least as recent as the latest relevant surviving row's `updated_at`. This lets an
+empty collection be reviewed. Timestamps alone are not sufficient after deletion: deleting the
+newest row could otherwise make an old review appear current. The small per-section revision row
+solves that case: every relevant create, update, or delete increments its revision transactionally,
+and a review records the revision it observed. This is a narrowly scoped integrity mechanism, not
+a fragile trigger that flips a duplicate completeness flag.
 
 ## Resume domain
 
+**Status: Phase 1B deferred.** These records are not part of the Phase 1A model and must not be
+created until the confirmed manual profile is stable. Their eventual extraction output is a
+reviewable suggestion, not a write path to confirmed profile rows.
+
 | Table | Key fields | Notes |
 |---|---|---|
-| `resumes` | `id`, `user_id`, `storage_path`, `uploaded_at`, `status` (`pending`\|`processing`\|`completed`\|`failed`), `claimed_at`, `claimed_by_run_id`, `is_active_version` | File itself lives in Supabase Storage, private bucket. `status`/`claimed_*` support the atomic-claim job pattern in [DATA_FLOW.md](DATA_FLOW.md#2-resume-upload-and-profile-extraction-flow) |
+| `resumes` | `id`, `user_id`, `storage_path`, `uploaded_at`, `status` (`pending`\|`processing`\|`completed`\|`failed`), `claimed_at`, `claimed_by_run_id`, `is_active_version` | File itself lives in Supabase Storage, private bucket. Its Phase 1B behavior must extend the deferred flow in [DATA_FLOW.md](DATA_FLOW.md#2b-phase-1b-resume-extraction-deferred). |
 | `resume_extractions` | `id`, `resume_id`, `extracted_json`, `extracted_at`, `parser_version` | Raw extraction kept separate from confirmed profile fields, so re-parsing or parser upgrades never silently overwrite user corrections |
 
 ## Opportunity identity domain (shared/global, service-role write)

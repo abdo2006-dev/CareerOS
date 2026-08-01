@@ -63,8 +63,16 @@ See [OPPORTUNITY_TAXONOMY.md](OPPORTUNITY_TAXONOMY.md) for the full definition. 
   and personal competitiveness.
 - **Development opportunities** (hackathons, competitions, research programmes, summer schools,
   scholarships, workshops, career fairs, insight events, open-source programmes, conferences) get
-  a single ranking built from a different set of dimensions (cost, distance, deadline, resume
-  value, etc.).
+a single ranking built from a different set of dimensions (cost, distance, deadline, resume
+value, etc.).
+
+## Phase 1 profile sequencing
+
+**Phase 1A** is a structured, manual, matching-ready career profile. It includes no resume
+upload, extraction, background parsing, or imported suggestions. **Phase 1B** follows only after
+the manual profile model and workflows are stable; it may create extraction suggestions but never
+silently overwrite confirmed data. These are separate planning units, branches, pull requests, and
+exit conditions ([ADR-011](adr/ADR-011-manual-profile-before-resume-extraction.md)).
 
 ## 5. Explainability requirement (hard constraint)
 

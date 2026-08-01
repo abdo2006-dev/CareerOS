@@ -60,9 +60,8 @@ Any table using the atomic-claim pattern (`resumes.status = 'processing'`, and a
 claimable work queue) should be monitorable for items whose `claimed_at` has exceeded the lease
 timeout without completing — in practice, a simple count query an operator (currently the user,
 acting as their own administrator) can check, surfacing a job that died mid-run without a
-subsequent run having reclaimed it yet. See
-[DATA_FLOW.md](DATA_FLOW.md#2-resume-upload-and-profile-extraction-flow) for the claim/lease
-mechanism this monitors.
+subsequent run having reclaimed it yet. See the deferred [resume domain](DATA_MODEL.md#resume-domain)
+for the claim/lease mechanism Phase 1B must define.
 
 ## 6. Error logging content rules
 

@@ -39,6 +39,7 @@ matter of enabling sign-ups, not rearchitecting the schema or the pipeline. See
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System components, where they run, how they talk |
 | [docs/DATA_FLOW.md](docs/DATA_FLOW.md) | How data moves from external source to scored, saved opportunity |
 | [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | Database schema and entity relationships |
+| [docs/PROFILE_COMPLETENESS_SPEC.md](docs/PROFILE_COMPLETENESS_SPEC.md) | Language-neutral, explainable Phase 1A completeness contract |
 | [docs/SCORING_AND_MATCHING_MODEL.md](docs/SCORING_AND_MATCHING_MODEL.md) | How relevance and competitiveness scores are computed and explained |
 | [docs/DATA_SOURCES_AND_COMPLIANCE.md](docs/DATA_SOURCES_AND_COMPLIANCE.md) | Which sources are used, legally and operationally |
 | [docs/SECURITY_AND_PRIVACY.md](docs/SECURITY_AND_PRIVACY.md) | Auth, data isolation, secrets, resume privacy, threat handling |
@@ -56,7 +57,8 @@ matter of enabling sign-ups, not rearchitecting the schema or the pipeline. See
 
 Prerequisites:
 
-- Node.js (version pinned in [app/.nvmrc](app/.nvmrc))
+- Node.js `22.23.1` (the root [.nvmrc](.nvmrc) is authoritative). Run `nvm use` from the
+  repository root before `npm ci`; the frontend package declares the same engine.
 - A Docker-compatible container runtime. This project uses **Colima** (Docker CLI + Colima, via
   Homebrew) rather than Docker Desktop — see [docs/DEPLOYMENT_STRATEGY.md](docs/DEPLOYMENT_STRATEGY.md)
   for why, including a real network-exposure issue found and fixed during setup.

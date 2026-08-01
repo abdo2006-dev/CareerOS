@@ -20,6 +20,11 @@ that explicitly supersedes it. Do not silently drift away from what's recorded h
 | [ADR-008](ADR-008-private-first-multi-user-later.md) | Private single-user MVP on a multi-tenant-ready schema | **Accepted** |
 | [ADR-009](ADR-009-zero-cost-mvp-deployment.md) | Zero-recurring-cost MVP deployment | Proposed (nothing deployed yet) |
 | [ADR-010](ADR-010-opportunity-identity-and-cross-source-deduplication.md) | Source-listing/canonical-opportunity split with conservative, review-gated cross-source deduplication | Proposed |
+| [ADR-011](ADR-011-manual-profile-before-resume-extraction.md) | Manual structured profile before resume extraction | Proposed |
+| [ADR-012](ADR-012-canonical-skills-and-skill-evidence.md) | Canonical skills with flexible, ownership-safe evidence | Proposed |
+| [ADR-013](ADR-013-deterministic-profile-completeness.md) | Deterministic, named profile-completeness checks | Proposed |
+| [ADR-014](ADR-014-confirmed-profile-versus-imported-suggestions.md) | Confirmed profile records remain authoritative over imported suggestions | Proposed |
+| [ADR-015](ADR-015-minimized-work-eligibility-representation.md) | Minimal structured work-eligibility representation | Proposed |
 
 "Proposed" means the decision is this planning phase's recommendation, presented for the project
 owner's review — not yet exercised in a real implementation. Once implemented and validated,

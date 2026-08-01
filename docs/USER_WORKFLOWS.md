@@ -3,24 +3,24 @@
 Status: **proposal**. These are concrete usage scenarios the MVP must support; they exist to keep
 architecture and data-model decisions grounded in real usage rather than abstract requirements.
 
-## Workflow 1 — Onboarding and profile setup
+## Workflow 1 — Phase 1A manual profile setup
 
-1. User signs in (Supabase Auth, single account for MVP).
-2. User uploads a resume (PDF/DOCX) to private storage; the resume record is immediately visible
-   in the UI with status `pending`.
-3. A scheduled parsing job picks up pending resumes on a short interval (e.g., every 10-15
-   minutes) and extracts candidate structured data: education entries, skills, projects, prior
-   experience, languages. This is **eventually consistent, not instant** — GitHub Actions cron can
-   start late or occasionally skip a run (see [DATA_FLOW.md](DATA_FLOW.md#0-a-standing-caveat-github-actions-is-a-scheduler-not-a-reliable-interactive-system)),
-   so the UI shows the resume moving through `pending` → `processing` → `completed` (or `failed`
-   with a reason) rather than implying an instant result. A synchronous processing option (Edge
-   Function or worker) is deferred until waiting is a demonstrated real problem for the user, not
-   built speculatively now — see [ARCHITECTURE.md](ARCHITECTURE.md).
-4. User reviews the extracted profile screen by screen and corrects anything wrong or missing:
-   adds project links, adjusts skill proficiency, sets location preferences (Bremen/Hamburg
-   priority, Germany-wide, remote-acceptable), sets work-eligibility facts (student visa status,
-   hours/week permitted), and sets target roles/areas from the engineering-area list.
-5. Profile is marked complete enough for scoring (a minimum-field checklist, not perfection).
+1. User signs in and sees a profile overview with named completeness checks and concrete next
+   actions, never just a mysterious percentage.
+2. User edits education, experience/research, projects/links, skills/evidence, languages,
+   preferences, targets, and minimized work eligibility as independent sections.
+3. Each section saves independently; it supports empty, loading, success, validation-error,
+   server-error, and deletion-confirmation states where applicable.
+4. The overview reports what is present, missing, unconfirmed, or optional. The user can mark a
+   section reviewed even when intentionally empty. Later section content changes or deletions make
+   that review stale through the section revision, so the UI asks for a renewed review rather than
+   inferring confirmation from field presence alone.
+5. Education may have multiple active entries. The user explicitly chooses at most one primary
+   current education entry for matching; its degree year and expected graduation timing feed
+   completeness and later matching.
+
+Resume upload, parsing, and imported drafts are Phase 1B workflows. They are not part of Phase 1A;
+when built, they follow ADR-014's explicit accept/correct/reject model.
 
 ## Workflow 2 — Discovering and understanding the market
 

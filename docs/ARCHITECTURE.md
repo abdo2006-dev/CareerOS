@@ -33,14 +33,14 @@ flowchart TB
     subgraph Supabase["Supabase (managed)"]
         Auth["Auth\n(email/magic-link)"]
         PG["Postgres\n(app data + RLS)"]
-        Storage["Storage\n(resumes only;\nno raw external content by default)"]
+        Storage["Storage\n(resume files deferred to Phase 1B;\nno raw external content by default)"]
         Edge["Edge Functions (Deno)\n[reserved, not used at MVP]"]
     end
 
     subgraph GHA["GitHub Actions (scheduled)"]
         Ingest["Python ingestion job\n(source adapters)"]
         Score["Python scoring job\n(deterministic pipeline)"]
-        Parse["Python resume-parsing job"]
+        Parse["Python resume-parsing job\n(deferred to Phase 1B)"]
     end
 
     subgraph Ext["External sources"]
@@ -58,8 +58,8 @@ flowchart TB
     Ingest --> Ext
     Ingest -->|service-role key, GitHub secret| PG
     Score -->|reads opportunities + profile, writes scores| PG
-    Parse -->|reads uploaded resume| Storage
-    Parse -->|writes structured profile draft| PG
+    Parse -.->|future: reads uploaded resume| Storage
+    Parse -.->|future: writes reviewable suggestions| PG
 
     GHA -.->|cron trigger| Ingest
     GHA -.->|cron trigger| Score
@@ -83,6 +83,22 @@ depth (escaping on render) is still applied.
 possible and a clear offline/error state; it never silently shows stale data as current without
 indication.
 
+### Phase 1A profile UI and client-state direction
+
+Phase 1A introduces a profile overview plus bookmarkable Education, Experience and Research,
+Projects and Links, Skills and Evidence, Languages, Preferences, and Work Eligibility pages.
+Each section saves independently; the overview turns deterministic completeness checks into
+concrete next actions. A section can be deliberately reviewed when empty; a per-section content
+revision makes that review stale after a relevant create, update, or delete. Sections must support
+empty, loading, success, validation-error, server-error, and deletion-confirmation states.
+
+**React Router is now justified** because these are real bookmarkable pages with browser-history
+behavior, not conditional panels. This is a recorded decision, not an installed dependency in this
+planning PR. **TanStack Query is not added yet**: simple typed repositories and explicit reloads
+remain enough until shared cached queries across routes, repetitive mutation invalidation,
+background refresh, optimistic updates, or more complex server-state coordination provides a
+concrete need.
+
 ### Data and auth layer — Supabase (managed Postgres + Auth + Storage)
 
 Supabase is not treated as a black box; it is specifically "managed Postgres with batteries." The
@@ -92,9 +108,9 @@ architecture depends on three of its parts:
   Row Level Security policies as the authorization boundary for every user-owned table.
 - **Auth** for identity (email/password or magic link at MVP). Issues the JWT the frontend uses
   for direct, RLS-scoped Postgres access.
-- **Storage** for resume files, in private buckets with signed URLs. Raw external content
-  (unsanitized source pages/responses) is **not** stored here, or anywhere, by default — see
-  "Raw external-content retention policy" below.
+- **Storage** for future Phase 1B resume files, in private buckets with signed URLs. Phase 1A does
+  not use Storage for profile data. Raw external content (unsanitized source pages/responses) is
+  **not** stored here, or anywhere, by default — see "Raw external-content retention policy" below.
 
 Runs entirely on Supabase's managed infrastructure (their cloud, on top of AWS). The project holds
 no server to patch or scale for this layer within the free tier's limits.
@@ -136,10 +152,9 @@ Three related but distinct jobs, all Python, all triggered by GitHub Actions cro
    the last known version, and writes new/updated source listings, opportunities, and version
    history to Postgres using a service-role key held in GitHub Actions secrets (never exposed to
    the browser).
-2. **Resume parsing**: picks up newly uploaded resumes from Storage, extracts structured
-   candidate data (skills, education, experience) into a draft profile the user then reviews in
-   the SPA. Runs on a short interval (e.g., every 10–15 minutes) rather than instantly — see
-   the trade-off discussion in [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md).
+2. **Resume parsing**: a future Phase 1B capability. It will extract separately reviewable
+   suggestions, never overwrite confirmed profile records, and must revisit field/suggestion-level
+   provenance ([ADR-014](adr/ADR-014-confirmed-profile-versus-imported-suggestions.md)).
 3. **Scoring**: recomputes market-relevance and personal-competitiveness scores whenever
    opportunities or the profile change meaningfully, writing explainable, versioned score records.
 
@@ -317,8 +332,8 @@ UI status indicator must be built:
   scheduled run and a manually-triggered one firing close together) cannot both pick up and
   process the same pending item. The pattern is a conditional `UPDATE ... WHERE status = 'pending'
   RETURNING *` — the database's own atomicity is what prevents the race, not application-level
-  locking. See [DATA_FLOW.md](DATA_FLOW.md#2-resume-upload-and-profile-extraction-flow) for a
-  worked example.
+  locking. This is a Phase 1B requirement; its eventual resume-processing design must document a
+  worked sequence before implementation.
 - **A job that dies after claiming an item needs a lease/timeout recovery path.** If a runner is
   killed mid-processing, the claimed item must not stay stuck in `processing` forever — a
   subsequent run's claim query must also match items whose `processing` status has an expired

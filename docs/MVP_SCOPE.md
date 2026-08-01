@@ -8,13 +8,12 @@ for how this maps to phases.
 
 1. **Authentication** — Supabase Auth, single account, schema designed for many. No public
    sign-up flow yet.
-2. **User career profile** — structured record of education, target roles, location preferences,
-   work eligibility, languages.
-3. **Resume upload and structured extraction** — PDF/DOCX upload, parsed into structured skills /
-   experience / education entries. Parsing is assisted, not blindly trusted (see requirement 4).
-4. **Manual profile correction** — every extracted field is user-editable; extraction is a
-   starting point, not an authority.
-5. **Skills, education, projects, languages, preferences, and target roles** as first-class,
+2. **Phase 1A user career profile** — manually maintained structured education, target roles,
+   locations, minimized work eligibility, languages, skills, projects, and evidence.
+3. **Phase 1B resume upload and structured extraction** — only after the manual model and editing
+   workflows are stable. Parsing creates reviewable suggestions; it never overwrites confirmed
+   data ([ADR-014](adr/ADR-014-confirmed-profile-versus-imported-suggestions.md)).
+4. **Skills, education, projects, languages, preferences, and target roles** as first-class,
    individually editable profile sections.
 6. **Opportunity ingestion from a small number of compliant sources** — enough to validate the
    pipeline end to end, not broad coverage. See [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md).
@@ -33,6 +32,8 @@ for how this maps to phases.
     templates is a fast-follow, not required for MVP sign-off.
 
 ## Explicitly deferred
+
+- Resume storage, upload, parsing, extraction drafts, and imported suggestions until Phase 1B.
 
 - Full smart-calendar optimization (calendar sync, scheduling assistant).
 - Voice recognition / voice interfaces.

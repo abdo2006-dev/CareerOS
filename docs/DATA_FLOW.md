@@ -78,56 +78,39 @@ deterministic evidence (an exact shared identifier or application URL). Anything
 [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) for the full rule
 set, failure modes, and why an uncertain merge is treated as worse than a temporary duplicate.
 
-## 2. Resume upload and profile extraction flow
+## 2. Phase 1A manual profile flow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant SPA as React SPA
-    participant Storage as Supabase Storage
-    participant DB as Postgres
-    participant Parse as Resume parsing job (Python, scheduled, best-effort timing)
+    participant DB as Postgres (RLS)
 
-    User->>SPA: upload resume file (PDF/DOCX)
-    SPA->>Storage: upload to private bucket (user-scoped path)
-    SPA->>DB: create resume record (status = pending)
-    Note over SPA: UI shows "Pending" immediately;\nthis is eventually consistent, not instant
-    Note over Parse: runs on a short interval (e.g. every 10-15 min),\nbut a run can start late or be skipped —\nsee ARCHITECTURE.md §7
-    Parse->>DB: ATOMIC CLAIM: UPDATE resumes SET status='processing',\nclaimed_at=now(), claimed_by_run_id=<this run>\nWHERE status='pending' RETURNING *
-    Note over DB: the WHERE status='pending' clause is what makes the\nclaim atomic — if two overlapping runs race,\nonly one UPDATE matches and returns a row
-    Parse->>Storage: fetch file (service-role, signed access)
-    Parse->>Parse: extract text, structure into\nskills/education/experience/languages draft
-    alt success
-        Parse->>DB: write draft profile fields, resume status = completed
-    else parser error
-        Parse->>DB: resume status = failed, error recorded
-    else job dies mid-processing (crash, runner killed)
-        Note over DB: resume stays status='processing' with a stale claimed_at
-        Note over Parse: a later run's claim query also matches rows where\nstatus='processing' AND claimed_at < now() - lease_timeout,\ntreating them as abandoned and reclaiming them
-    end
-    User->>SPA: open profile review screen
-    SPA->>DB: read resume status + draft profile fields
-    Note over SPA: UI renders one of pending / processing / completed / failed —\nnever implies a result exists before status = completed
-    User->>SPA: accept/correct each field
-    SPA->>DB: write confirmed profile fields (user-authored, RLS-scoped)
+    User->>SPA: open profile overview
+    SPA->>DB: read own confirmed manual rows + section review/revision rows
+    DB-->>SPA: profile sections and current/stale review state
+    SPA->>SPA: evaluate profile-completeness/v1 checks
+    SPA-->>User: show present, missing, unconfirmed, optional actions
+    User->>SPA: edit one section
+    SPA->>DB: insert/update/delete own manual row
+    DB-->>SPA: success or RLS/validation error
+    SPA->>SPA: reload section and reevaluate named checks
 ```
 
-**Why not synchronous**: making this instant requires a server that responds to the upload
-request itself (Edge Function or API), which the MVP defers — see
-[ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md). The UI must clearly show which of
-`pending` / `processing` / `completed` / `failed` a resume is in, and must not fake immediacy.
-**A synchronous Edge Function or containerized worker is the correct next step once waiting
-becomes a demonstrated user problem** — not introduced now (see
-[ARCHITECTURE.md](ARCHITECTURE.md#7-github-actions-reliability-characteristics-read-before-relying-on-cadence)).
+All Phase 1A profile rows are manual (`created_via = manual` where recorded). A section is saved
+independently; completing a profile wizard is never required. A deliberate review records the
+section's current revision, including when the collection is empty; relevant creates, updates, and
+deletes increment that revision so a stale review is visible. The browser writes only through the
+user's JWT and RLS, while ownership-safe composite constraints prevent a known foreign UUID from
+being attached as project, experience, education, link, or skill evidence.
 
-**Trust boundary**: resume content is the user's own private data, not external/untrusted content
-— but the *file itself* is untrusted input (must be validated as an actual PDF/DOCX, size-limited,
-and parsed with a library resistant to malformed-file exploits) before parsing.
+## 2B. Phase 1B resume extraction (deferred)
 
-**Lease/timeout recovery**: any job that atomically claims a unit of work (this flow, and the
-ingestion flow's per-listing processing) must define a lease timeout after which a `processing` row
-with a stale `claimed_at` is treated as abandoned and eligible for reclaiming by a subsequent run.
-Without this, a single crashed run could leave work permanently stuck in `processing`.
+Resume storage, parsing, lease recovery, and suggestion review are intentionally outside this
+Phase 1A implementation. When planned, extraction must create separate suggestions and require
+explicit accept, correct, or reject actions; it cannot write over confirmed rows. It must revisit
+field/suggestion-level provenance because `created_via = manual` at row level does not represent
+mixed-origin information.
 
 ## 3. Saving an opportunity and generating tasks
 
