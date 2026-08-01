@@ -93,8 +93,9 @@ revision makes that review stale after a relevant create, update, or delete. Sec
 empty, loading, success, validation-error, server-error, and deletion-confirmation states.
 
 **React Router is now justified** because these are real bookmarkable pages with browser-history
-behavior, not conditional panels. This is a recorded decision, not an installed dependency in this
-planning PR. **TanStack Query is not added yet**: simple typed repositories and explicit reloads
+behavior, not conditional panels. The first Phase 1A slice installs the current stable
+`react-router` package and uses `createBrowserRouter`/`RouterProvider`; tests use
+`createMemoryRouter`. **TanStack Query is not added yet**: simple typed repositories and explicit reloads
 remain enough until shared cached queries across routes, repetitive mutation invalidation,
 background refresh, optimistic updates, or more complex server-state coordination provides a
 concrete need.
