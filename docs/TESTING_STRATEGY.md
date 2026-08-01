@@ -73,18 +73,24 @@ each rule gets explicit positive and negative test cases.
 ## Phase 1A profile implementation tests (future)
 
 - **Migration structure tests**: exact tables, direct `user_id` ownership, required foreign keys,
-  ownership-safe composite parent references, constraints, timestamps, and no authoritative
-  `profile_complete` column/behavior.
+  ownership-safe composite parent references, primary-education partial unique constraint,
+  typed-skill-evidence exactly-one-source check, bounded note, section-review/revision constraints,
+  timestamps, and no authoritative `profile_complete` column/behavior.
 - **Exact permission tests**: revoke-then-grant sets, exact RLS-policy names/predicates, no anon
-  grants, owner CRUD, cross-user isolation, forged-owner insert, and ownership-rewrite denial.
+  grants, owner CRUD, cross-user isolation, forged-owner insert, ownership-rewrite denial, and
+  owner `profiles` DELETE denial.
 - **Composite-parent bypass tests**: user A must not attach user B's project, experience,
-  education, profile link, preference container, or skill claim by knowing its UUID.
+  education, profile link, preference container, or skill claim by knowing its UUID. Typed evidence
+  must reject zero/multiple sources and targets belonging to another user.
+- **Section-review freshness tests**: empty sections may be reviewed; a relevant create/update or
+  delete increments the section revision and makes the review stale; users cannot forge a review
+  for another owner, an unknown key, or a future revision.
 - **Shared catalog tests**: authenticated read succeeds; INSERT/UPDATE/DELETE of canonical
   skills, aliases, areas, and roles fails; private custom labels never enter shared aggregation.
 - **Real API tests**: Auth → JWT → PostgREST tests cover the same positive and negative cases,
   rather than relying only on pgTAP.
 - **Frontend tests**: validate forms, independent section save/delete behavior, state handling,
-  accessibility-focused behavior, and the language-neutral vectors in
+  accessibility-focused behavior, primary-education selection, and the language-neutral vectors in
   [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md). Fixtures must be synthetic and
   public-safe; Phase 0 regressions remain required.
 

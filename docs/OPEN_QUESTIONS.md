@@ -36,6 +36,10 @@ phase that needs it.
   where rules clearly fail is the likely direction, but this needs a dedicated design pass before
   Phase 1 of [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md), including a cost check (LLM resume
   parsing would be the first real LLM cost, ahead of the Phase 7 explanation feature).
+- **Primary-education migration selection**: the next implementation PR must define the
+  deterministic fallback when Phase 0 values exist but no education entry is an obvious primary
+  candidate (for example, create a clearly marked incomplete primary row for user review rather
+  than silently selecting among multiple entries).
 
 ## Compliance
 

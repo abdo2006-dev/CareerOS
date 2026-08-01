@@ -57,7 +57,7 @@ Computed per user, per opportunity version. Sub-scores, each independently expla
 | `eligibility_status` | Hard rules: work authorization, degree-level requirement, language requirement if mandatory | Which specific rule passed/failed and why |
 | `degree_relevance_score` | Same basis as Ranking 1's, reused | — |
 | `skill_alignment_score` | Overlap between posting's required/preferred skills and `user_skills`, weighted by proficiency | List of matched skills with proficiency, and list of required skills absent from the profile |
-| `project_evidence_score` | Whether claimed skills are backed by a linked project (`user_skills.evidence_project_id`), not just an assertion | Which projects support which claimed skills |
+| `project_evidence_score` | Whether claimed skills are backed by linked `skill_evidence` rows (including project evidence), not just an assertion | Which evidence items support which claimed skills |
 | `experience_alignment_score` | Years/type of experience in `work_experience` vs. posting's stated experience expectation | Matched or missing experience type |
 | `language_alignment_score` | `user_languages` vs. posting's language requirement | — |
 | `location_alignment_score` | `preferences.preferred_locations`/`bremen_hamburg_priority` vs. posting location, and remote acceptability | — |

@@ -88,8 +88,9 @@ indication.
 Phase 1A introduces a profile overview plus bookmarkable Education, Experience and Research,
 Projects and Links, Skills and Evidence, Languages, Preferences, and Work Eligibility pages.
 Each section saves independently; the overview turns deterministic completeness checks into
-concrete next actions. Sections must support empty, loading, success, validation-error,
-server-error, and deletion-confirmation states.
+concrete next actions. A section can be deliberately reviewed when empty; a per-section content
+revision makes that review stale after a relevant create, update, or delete. Sections must support
+empty, loading, success, validation-error, server-error, and deletion-confirmation states.
 
 **React Router is now justified** because these are real bookmarkable pages with browser-history
 behavior, not conditional panels. This is a recorded decision, not an installed dependency in this

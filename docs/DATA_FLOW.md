@@ -87,8 +87,8 @@ sequenceDiagram
     participant DB as Postgres (RLS)
 
     User->>SPA: open profile overview
-    SPA->>DB: read own confirmed manual rows
-    DB-->>SPA: profile sections and confirmations
+    SPA->>DB: read own confirmed manual rows + section review/revision rows
+    DB-->>SPA: profile sections and current/stale review state
     SPA->>SPA: evaluate profile-completeness/v1 checks
     SPA-->>User: show present, missing, unconfirmed, optional actions
     User->>SPA: edit one section
@@ -98,7 +98,9 @@ sequenceDiagram
 ```
 
 All Phase 1A profile rows are manual (`created_via = manual` where recorded). A section is saved
-independently; completing a profile wizard is never required. The browser writes only through the
+independently; completing a profile wizard is never required. A deliberate review records the
+section's current revision, including when the collection is empty; relevant creates, updates, and
+deletes increment that revision so a stale review is visible. The browser writes only through the
 user's JWT and RLS, while ownership-safe composite constraints prevent a known foreign UUID from
 being attached as project, experience, education, link, or skill evidence.
 

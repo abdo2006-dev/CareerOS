@@ -88,10 +88,11 @@ provenance; a row-level manual marker does not solve mixed-origin data.
   and application history in a portable form (proposal: a JSON export endpoint/script) — deferred
   implementation, but the schema must not make this structurally hard (it doesn't: everything is
   relational and user-scoped).
-- Account deletion: deleting a user must cascade-delete or anonymize all `user_id`-scoped rows
-  (profile, resumes, saved opportunities, applications, tasks) and remove stored resume files from
-  Storage. This should be a documented, tested operation before any second real user is onboarded,
-  not just a `DELETE` a developer runs manually.
+- Profile/account deletion: the browser must not directly delete `profiles`, because that would
+  cascade the career profile while leaving the Auth user alive. A later explicit trusted workflow
+  must coordinate export/confirmation requirements, Auth-user deletion, user-owned database rows,
+  and Storage objects. It must be documented and tested before any second real user is onboarded,
+  not a raw browser or developer `DELETE`.
 
 ## 6. Untrusted external content
 

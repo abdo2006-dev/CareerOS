@@ -38,6 +38,8 @@ This revision corrects two gaps identified in review:
 erDiagram
     USERS ||--o| PROFILES : has
     PROFILES ||--o{ EDUCATION_ENTRIES : has
+    PROFILES ||--o{ PROFILE_SECTION_REVIEWS : records
+    PROFILES ||--o{ PROFILE_SECTION_REVISIONS : tracks
     PROFILES ||--o{ WORK_EXPERIENCE : has
     PROFILES ||--o{ PROJECTS : has
     PROFILES ||--o{ PROFILE_LINKS : has
@@ -47,9 +49,9 @@ erDiagram
     USER_SKILLS ||--o{ SKILL_EVIDENCE : supported_by
     PROJECTS ||--o{ PROJECT_SKILLS : uses
     PROFILES ||--o{ USER_LANGUAGES : has
-    PROFILES ||--|| PREFERENCES : has
+    PROFILES ||--o| PREFERENCES : has
     PREFERENCES ||--o{ PREFERENCE_LOCATIONS : has
-    PROFILES ||--o{ WORK_ELIGIBILITY : has
+    PROFILES ||--o| WORK_ELIGIBILITY : has
     USERS ||--o{ RESUMES : uploads
     RESUMES ||--o{ RESUME_EXTRACTIONS : produces
 
@@ -81,38 +83,53 @@ erDiagram
 not implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
 
 **Ownership rule (binding, see [AGENTS.md](../AGENTS.md))**: every user-owned table has direct
-`user_id`, including association tables. User-owned child references use ownership-safe composite
-foreign keys — e.g. `(user_id, project_id)` references a unique `(user_id, id)` on `projects` — or
-an equivalent trigger/constraint. A UUID alone never authorizes attaching another user's row.
-Each manual row may include `created_via = manual`, `created_at`, `updated_at`, and meaningful
-`last_confirmed_at`; this is row context, not a Phase 1B provenance solution.
+`user_id`, including association tables. The root `profiles.user_id` references `auth.users(id)`;
+child user-owned rows generally reference `profiles(user_id)` through that same direct `user_id`.
+User-owned child references use ownership-safe composite foreign keys — e.g. `(user_id,
+project_id)` references a unique `(user_id, id)` on `projects` — or an equivalent constraint. A
+UUID alone never authorizes attaching another user's row. Each manual row may include
+`created_via = manual`, `created_at`, `updated_at`, and meaningful `last_confirmed_at`; this is
+row context, not a Phase 1B provenance solution.
 
 | Entity | Purpose / ownership / key | Major foreign keys and constraints | Deletion / RLS / sensitivity / browser access / later consumer |
 |---|---|---|---|
-| `profiles` | One matching-ready identity per user; user-owned; `user_id` PK. | FK `auth.users(id)`; degree year bounded; expected graduation timing optional; no authoritative `profile_complete`. | Cascades from user; own-row RLS; High; browser CRUD; Phase 1A overview, later matching/scoring. |
-| `education_entries` | Education history; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; institution required; date order; current entry is explicit/derived consistently. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, matching, evidence. |
+| `profiles` | One profile identity per user; user-owned; `user_id` PK. | FK `auth.users(id)`; holds only profile-level facts such as preferred name and headline; no authoritative degree program, degree year, or graduation timing; no `profile_complete`. | Cascades from Auth-user deletion; own-row RLS; High; browser SELECT/INSERT/UPDATE only — never direct DELETE; Phase 1A overview, later matching/scoring. |
+| `education_entries` | Education history and authoritative education facts; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; institution, degree, field, `degree_year`, expected graduation month/year, start date, and `education_status`; date/order checks. `is_primary` is optional, but partial unique `(user_id) WHERE is_primary` permits at most one primary entry. A primary normally must be current; explicit status constraint enforces that relationship. Multiple active entries remain allowed. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, matching, evidence. A later forward migration copies Phase 0 `profiles.degree_program`/`degree_year` into the selected or created primary entry before removing their authoritative role. |
+| `profile_section_reviews` | Deliberate review of a UI section, including intentionally empty sections; user-owned; composite PK `(user_id, section_key)`. | `(user_id)` → profiles; controlled keys: `basic_profile`, `education`, `experience`, `projects`, `skills`, `languages`, `preferences`, `work_eligibility`; `reviewed_at`, `reviewed_content_revision`, timestamps. | Cascade from profile; own-row RLS; High; browser CRUD; deterministic review state/completeness. |
+| `profile_section_revisions` | Minimal deletion-safe content freshness state; user-owned metadata; composite PK `(user_id, section_key)`. | Same controlled keys; non-negative monotonic `content_revision`, `updated_at`. Created at revision zero for each section; database-maintained mutation path increments it transactionally on relevant row create/update/delete. | Cascade from profile; own-row RLS; Medium; browser SELECT only; supports review freshness without a reset-flag trigger. |
 | `work_experience` | Employment, research, or volunteering evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; role/organization required; date order; bounded description. | Cascade from profile; own-row RLS; High; browser CRUD; evidence and future matching. |
 | `projects` | User project evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; title required; bounded description; optional safe URL. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, evidence, matching. |
 | `profile_links` | Links to portfolio/GitHub/public work; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; URL scheme/length allowlist; labeled link. | Cascade from profile; own-row RLS; Medium; browser CRUD; evidence and optional enrichment. |
-| `skills_catalog` | Small canonical skill names for matching; shared; `id` PK. | Normalized canonical name unique; bounded category; no user data. | Service maintains; authenticated read only; Low; browser SELECT only; matching and market aggregation. |
+| `skills_catalog` | Small canonical skill names for matching; shared; `id` PK. | Normalized canonical name unique; bounded category and controlled `is_technical` classification; no user data. | Service maintains; authenticated read only; Low; browser SELECT only; matching and market aggregation. |
 | `skill_aliases` | Controlled alternate names for a canonical skill; shared; `id` PK. | `skill_id` → catalog; normalized alias unique; aliases never point to a custom label. | Cascade from catalog; authenticated read only, service write; Low; browser SELECT only; normalization/matching. |
-| `user_skills` | A user's skill claim, canonical or private custom; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; optional `skill_id` → catalog XOR bounded `custom_label`; unique normalized claim per user; scalar `self_assessment` enum is explicitly self-reported. | Cascade from profile; own-row RLS; High; browser CRUD; completeness and future matching. |
+| `user_skills` | A user's skill claim, canonical or private custom; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; optional `skill_id` → catalog XOR bounded `custom_label`; unique normalized claim per user; scalar `self_assessment` enum is explicitly self-reported. A claim is technical when its canonical catalog entry is controlled as technical, or a private label is explicitly self-classified technical; private labels remain private. | Cascade from profile; own-row RLS; High; browser CRUD; completeness and future matching. |
 | `project_skills` | Relational project technologies/skills; user-owned association; composite PK `(user_id, project_id, skill_id)`. | `(user_id, project_id)` → projects; `skill_id` → catalog; no arrays. | Cascade from project/catalog as appropriate; own-row plus composite-parent checks; High; browser CRUD; evidence and matching. |
-| `skill_evidence` | Many evidence items for a skill claim; user-owned; `id` PK, direct `user_id`. | `(user_id, user_skill_id)` → user skills; exactly one supported target among project, experience, education, link, bounded note; each target uses `(user_id, target_id)` FK. | Cascade from claim/target; own-row and parent-bypass tests; High; browser CRUD; evidence-first matching. |
+| `skill_evidence` | Dedicated many-row association: one typed evidence item for a skill claim; user-owned; `id` PK, direct `user_id`. | `(user_id, user_skill_id)` → user skills. Nullable `project_id`, `work_experience_id`, `education_entry_id`, `profile_link_id`, and bounded `manual_note`; a check constraint requires exactly one source. Each relational target has a same-user composite FK. Adding a new evidence category is an intentional schema change for real FK integrity; note content never enters shared aggregation. | Cascade from claim/target; own-row and parent-bypass tests; High; browser CRUD; evidence-first matching. |
 | `user_languages` | Language claims; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; normalized language unique per user; scalar CEFR enum. | Cascade from profile; own-row RLS; High; browser CRUD; readiness and matching. |
-| `preferences` | One user preference container; user-owned; `user_id` PK. | FK profile; scalar `remote_preference` enum; no location/target arrays. | Cascade from profile; own-row RLS; High; browser CRUD; matching/filtering. |
+| `preferences` | Optional singleton preference container; user-owned; `user_id` PK. | FK profile; scalar `remote_preference` enum; no location/target arrays. | Zero-or-one until a migration deliberately auto-creates it; cascade from profile; own-row RLS; High; browser CRUD; matching/filtering. |
 | `preference_locations` | Preferred locations relation; user-owned; `id` PK, direct `user_id`. | `(user_id)` → preferences; normalized location + country/region; unique per user. | Cascade from preferences; own-row RLS; Medium; browser CRUD; matching/filtering. |
 | `engineering_areas` | Controlled engineering-area reference; shared; `id` PK. | Unique normalized name. | Service-maintained; authenticated read only; Low; browser SELECT only; targeting and matching. |
 | `role_types` | Controlled role-type reference; shared; `id` PK. | Unique normalized name. | Service-maintained; authenticated read only; Low; browser SELECT only; targeting and matching. |
 | `user_target_engineering_areas` | User's selected areas; user-owned association; composite PK `(user_id, engineering_area_id)`. | `(user_id)` → profile; area → catalog. | Cascade from profile/catalog; own-row RLS; Medium; browser CRUD; readiness and matching. |
 | `user_target_role_types` | User's selected roles; user-owned association; composite PK `(user_id, role_type_id)`. | `(user_id)` → profile; role → catalog. | Cascade from profile/catalog; own-row RLS; Medium; browser CRUD; readiness and matching. |
 | `target_companies` | Optional watchlist; user-owned; `id` PK, direct `user_id`. | `(user_id)` → profile; normalized company name unique per user; bounded note only. | Cascade from profile; own-row RLS; Medium; browser CRUD; optional enrichment, future discovery. |
-| `work_eligibility` | Minimal self-reported eligibility state; user-owned, highly sensitive; `user_id` PK. | FK profile; enum `eligible`/`eligible_with_conditions`/`requires_sponsorship`/`unknown`; optional non-negative weekly limit; `last_confirmed_at` required after review. | Cascade from profile; own-row RLS; Very High; browser CRUD; readiness and future eligibility checks. |
+| `work_eligibility` | Optional singleton minimal self-reported eligibility state; user-owned, highly sensitive; `user_id` PK. | FK profile; enum `eligible`/`eligible_with_conditions`/`requires_sponsorship`/`unknown`; optional non-negative weekly limit; `last_confirmed_at` required after review. | Zero-or-one per profile; cascade from profile; own-row RLS; Very High; browser CRUD; readiness and future eligibility checks. |
 
 Relational structures are required for skills, aliases, project technologies, evidence, targets, and
 preferred locations because they support validation, aggregation, future matching, and explainable
 links. Arrays would conceal ownership and parent checks. Scalar enums remain appropriate for
 remote preference, skill self-assessment, and work-eligibility state.
+
+### Review freshness
+
+A section is deliberately reviewed only when its `profile_section_reviews` row exists. Its review
+is current when `reviewed_content_revision` equals the current revision for that section and the
+review time is at least as recent as the latest relevant surviving row's `updated_at`. This lets an
+empty collection be reviewed. Timestamps alone are not sufficient after deletion: deleting the
+newest row could otherwise make an old review appear current. The small per-section revision row
+solves that case: every relevant create, update, or delete increments its revision transactionally,
+and a review records the revision it observed. This is a narrowly scoped integrity mechanism, not
+a fragile trigger that flips a duplicate completeness flag.
 
 ## Resume domain
 

@@ -25,6 +25,17 @@ process.
 save it (RLS-permitted), sign out — verified both by automated tests and by hand in a real
 browser against the real local stack. No opportunity data yet.
 
+## Next implementation PR — Profile core and primary education vertical slice
+
+This remains deliberately small. It will implement only the forward migration of existing Phase 0
+education values, refined `profiles` and `education_entries`, `profile_section_reviews` for
+`basic_profile` and `education`, exact grants/RLS/pgTAP/API tests, React Router foundation, profile
+overview, education CRUD, and completeness checks limited to those implemented inputs. It must not
+claim full completeness while other Phase 1A domains do not exist.
+
+The forward migration must preserve `profiles.degree_program` and `profiles.degree_year` by copying
+them into the selected or created primary education row before they stop being authoritative.
+
 ## Phase 1A — Structured manual career profile
 
 - Full section-based CRUD for the logical profile domain in [DATA_MODEL.md](DATA_MODEL.md):
@@ -37,6 +48,10 @@ browser against the real local stack. No opportunity data yet.
 
 **Exit condition**: Workflow 1 works through manual entry only, with independent section saves,
 actionable completeness, and verified cross-user isolation.
+
+Later Phase 1A PRs add experience/projects/links; then skills/evidence/languages; then
+preferences/targets/work eligibility; and finally the complete v2 evaluator. At every stage,
+unimplemented checks are shown as product-unavailable rather than user omissions.
 
 ## Phase 1B — Resume intake and extraction drafts
 

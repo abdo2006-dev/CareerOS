@@ -11,8 +11,13 @@ architecture and data-model decisions grounded in real usage rather than abstrac
    preferences, targets, and minimized work eligibility as independent sections.
 3. Each section saves independently; it supports empty, loading, success, validation-error,
    server-error, and deletion-confirmation states where applicable.
-4. The overview reports what is present, missing, unconfirmed, or optional. It asks for deliberate
-   review of required sections instead of inferring it from field presence alone.
+4. The overview reports what is present, missing, unconfirmed, or optional. The user can mark a
+   section reviewed even when intentionally empty. Later section content changes or deletions make
+   that review stale through the section revision, so the UI asks for a renewed review rather than
+   inferring confirmation from field presence alone.
+5. Education may have multiple active entries. The user explicitly chooses at most one primary
+   current education entry for matching; its degree year and expected graduation timing feed
+   completeness and later matching.
 
 Resume upload, parsing, and imported drafts are Phase 1B workflows. They are not part of Phase 1A;
 when built, they follow ADR-014's explicit accept/correct/reject model.
