@@ -75,8 +75,9 @@ each rule gets explicit positive and negative test cases.
 **Implemented in the first profile-core/education slice**: pgTAP now verifies refined profile and
 education schema/grants, browser denial of root-profile deletion and direct revision/review/primary
 writes, revision freshness after profile and education mutations, locked review RPC behavior,
-primary-selection idempotence, and cascade safety. The real Auth/JWT/PostgREST suite is extended
-in the following commit; later Phase 1A domains remain future work.
+primary-selection idempotence, and cascade safety. The real Auth/JWT/PostgREST suite covers
+column restrictions, education CRUD, both RPCs, review staleness, and cross-user denial; later
+Phase 1A domains remain future work.
 
 - **Migration structure tests**: exact tables, direct `user_id` ownership, required foreign keys,
   ownership-safe composite parent references, primary-education partial unique constraint,
