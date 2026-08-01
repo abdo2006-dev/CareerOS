@@ -185,6 +185,11 @@ async function main() {
     });
     check('user A cannot forge profile provenance through the REST API', !forgeProfileMetadata.ok && forgeProfileMetadata.status === 403);
 
+    const deleteOwnProfile = await rest(tokenA, `/profiles?user_id=eq.${userA.id}`, {
+      method: 'DELETE', prefer: 'return=representation',
+    });
+    check('user A cannot delete their own root profile through the browser role', !deleteOwnProfile.ok && deleteOwnProfile.status === 403);
+
     // ---- education CRUD, primary RPC, and review freshness -----------------
     const createEducationA = await rest(tokenA, '/education_entries', {
       method: 'POST',
@@ -262,6 +267,11 @@ async function main() {
       method: 'POST', body: { user_id: userA.id, section_key: 'education', content_revision: 99 },
     });
     check('user A cannot directly forge section revisions', !directRevisionWrite.ok && directRevisionWrite.status === 403);
+
+    const directReviewWrite = await rest(tokenA, '/profile_section_reviews', {
+      method: 'POST', body: { user_id: userA.id, section_key: 'education', reviewed_content_revision: 999 },
+    });
+    check('user A cannot directly forge section reviews', !directReviewWrite.ok && directReviewWrite.status === 403);
 
     // ---- isolation: B cannot access A's data ------------------------------
     const readAAsB = await rest(tokenB, `/profiles?user_id=eq.${userA.id}`, {});

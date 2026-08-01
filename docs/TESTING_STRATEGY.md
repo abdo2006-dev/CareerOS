@@ -79,6 +79,10 @@ primary-selection idempotence, and cascade safety. The real Auth/JWT/PostgREST s
 column restrictions, education CRUD, both RPCs, review staleness, and cross-user denial; later
 Phase 1A domains remain future work.
 
+The corrective API coverage also explicitly verifies that neither an owner nor another browser
+user can delete a root profile, and that browser clients cannot directly insert revision or review
+metadata.
+
 The CI database job also runs `supabase/scripts/migration-compatibility-test.sh`. It uses the
 installed CLI's `supabase db reset --version` and `supabase migration up --local` commands to
 reset through Phase 0, insert synthetic legacy records, apply the Phase 1A migration, and verify
