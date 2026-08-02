@@ -7,6 +7,7 @@ import {
   reviewStatus,
 } from '../lib/profileReviewRepository'
 import type { EducationEntry } from '../lib/profileTypes'
+import { errorMessage, safeError } from '../lib/profileTypes'
 
 export function EducationListPage() {
   const { session } = useAuth()
@@ -14,6 +15,8 @@ export function EducationListPage() {
   const [entries, setEntries] = useState<EducationEntry[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [pendingOperation, setPendingOperation] = useState<string | null>(null)
+  const [reviewing, setReviewing] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [sectionState, setSectionState] = useState<
     'current' | 'stale' | 'not_reviewed'
@@ -25,8 +28,8 @@ export function EducationListPage() {
     if (result.error) return setStatus('error')
     setEntries(result.data)
     const sections = await profileReviewRepository.state(userId)
-    if (!sections.error)
-      setSectionState(reviewStatus(sections.data, 'education'))
+    if (sections.error) return setStatus('error')
+    setSectionState(reviewStatus(sections.data, 'education'))
     setStatus('ready')
   }, [userId])
   useEffect(() => {
@@ -34,29 +37,42 @@ export function EducationListPage() {
     void load()
   }, [load])
   async function primary(id: string) {
+    if (pendingOperation) return
+    setPendingOperation(`primary:${id}`)
     const result = await educationRepository.setPrimary(id)
     setMessage(
       result.error
-        ? 'Only a current education you own can be primary.'
+        ? errorMessage(safeError(result.error))
         : 'Primary education updated.',
     )
-    await load()
+    if (!result.error) await load()
+    setPendingOperation(null)
   }
   async function remove(id: string) {
+    if (pendingOperation) return
+    setPendingOperation(`delete:${id}`)
     const result = await educationRepository.remove(id)
-    if (result.error || !result.data?.length)
+    if (result.error) setMessage(errorMessage(safeError(result.error)))
+    else if (!result.data?.length)
       setMessage('This entry could not be deleted. It may already be gone.')
-    else setMessage('Education entry deleted.')
+    else {
+      setMessage('Education entry deleted.')
+      await load()
+    }
     setDeleting(null)
-    await load()
+    setPendingOperation(null)
   }
   async function review() {
+    if (reviewing) return
+    setReviewing(true)
     const result = await profileReviewRepository.review('education')
     setMessage(
       result.error
-        ? 'Education review could not be saved.'
-        : 'Education reviewed.',
+        ? errorMessage(safeError(result.error))
+        : 'Education reviewed. Review status was refreshed.',
     )
+    if (!result.error) await load()
+    setReviewing(false)
   }
   if (status === 'loading')
     return (
@@ -105,14 +121,18 @@ export function EducationListPage() {
                 <button
                   type="button"
                   className="secondary"
+                  disabled={pendingOperation === `primary:${entry.id}`}
                   onClick={() => void primary(entry.id)}
                 >
-                  Set primary
+                  {pendingOperation === `primary:${entry.id}`
+                    ? 'Setting primary…'
+                    : 'Set primary'}
                 </button>
               )}
               <button
                 type="button"
                 className="secondary"
+                disabled={Boolean(pendingOperation)}
                 onClick={() => setDeleting(entry.id)}
               >
                 Delete
@@ -120,8 +140,14 @@ export function EducationListPage() {
               {deleting === entry.id && (
                 <div role="dialog" aria-label={`Delete ${entry.institution}`}>
                   <p>Delete this education entry?</p>
-                  <button type="button" onClick={() => void remove(entry.id)}>
-                    Confirm delete
+                  <button
+                    type="button"
+                    disabled={pendingOperation === `delete:${entry.id}`}
+                    onClick={() => void remove(entry.id)}
+                  >
+                    {pendingOperation === `delete:${entry.id}`
+                      ? 'Deleting…'
+                      : 'Confirm delete'}
                   </button>
                   <button
                     type="button"
@@ -136,8 +162,13 @@ export function EducationListPage() {
           ))}
         </ul>
       )}
-      <button type="button" className="secondary" onClick={() => void review()}>
-        Mark education reviewed
+      <button
+        type="button"
+        className="secondary"
+        disabled={reviewing}
+        onClick={() => void review()}
+      >
+        {reviewing ? 'Saving review…' : 'Mark education reviewed'}
       </button>
       {message && <p>{message}</p>}
     </section>

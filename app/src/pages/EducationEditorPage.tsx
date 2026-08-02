@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { educationRepository } from '../lib/educationRepository'
 import { normalizeEducation, validateEducation } from '../lib/profileValidation'
+import { errorMessage, safeError } from '../lib/profileTypes'
 
 const empty = {
   institution: '',
@@ -22,6 +23,7 @@ export function EducationEditorPage() {
   const [values, setValues] = useState<Record<string, string>>(empty)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [loadState, setLoadState] = useState<
     'loading' | 'loaded' | 'missing' | 'error'
   >(educationId ? 'loading' : 'loaded')
@@ -29,11 +31,11 @@ export function EducationEditorPage() {
     if (!educationId) return
     const result = await educationRepository.get(educationId)
     if (result.error) {
-      setLoadState(result.error.code === 'PGRST116' ? 'missing' : 'error')
+      setLoadState(safeError(result.error) === 'missing' ? 'missing' : 'error')
       setMessage(
-        result.error.code === 'PGRST116'
+        safeError(result.error) === 'missing'
           ? 'This education entry no longer exists.'
-          : 'This education entry could not be loaded.',
+          : errorMessage(safeError(result.error)),
       )
       return
     }
@@ -68,15 +70,21 @@ export function EducationEditorPage() {
     event.preventDefault()
     const next = validateEducation(values)
     setErrors(next)
-    if (Object.keys(next).length || loadState !== 'loaded') return
+    if (Object.keys(next).length || loadState !== 'loaded' || saving) return
+    setSaving(true)
     const input = normalizeEducation(values)
     const result = educationId
       ? await educationRepository.update(educationId, input)
       : await educationRepository.create(session!.user.id, input)
-    if (result.error || !result.data) {
-      setMessage(
-        'Education could not be saved. Check the values and try again.',
-      )
+    if (result.error) {
+      setMessage(errorMessage(safeError(result.error)))
+      setSaving(false)
+      return
+    }
+    if (!result.data) {
+      setMessage('This education entry no longer exists. Return to education.')
+      setLoadState('missing')
+      setSaving(false)
       return
     }
     navigate('/profile/education', { replace: true })
@@ -113,6 +121,11 @@ export function EducationEditorPage() {
         <p>
           <Link to="/profile/education">Return to education</Link>
         </p>
+        {loadState === 'error' && (
+          <button type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        )}
       </section>
     )
   return (
@@ -160,7 +173,9 @@ export function EducationEditorPage() {
           )}
           {errors.graduation && <p role="alert">{errors.graduation}</p>}
         </fieldset>
-        <button type="submit">Save education</button>
+        <button type="submit" disabled={saving}>
+          {saving ? 'Saving…' : 'Save education'}
+        </button>
       </form>
       {message && <p role="alert">{message}</p>}
       <p>
