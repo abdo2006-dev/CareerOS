@@ -141,18 +141,16 @@ describe('EducationListPage', () => {
     list
       .mockResolvedValueOnce({ data: [entry], error: null })
       .mockResolvedValueOnce({ data: [], error: null })
-    sectionState
-      .mockResolvedValueOnce(current)
-      .mockResolvedValueOnce({
-        data: [
-          {
-            section_key: 'education',
-            content_revision: 2,
-            reviewed_content_revision: 1,
-          },
-        ],
-        error: null,
-      })
+    sectionState.mockResolvedValueOnce(current).mockResolvedValueOnce({
+      data: [
+        {
+          section_key: 'education',
+          content_revision: 2,
+          reviewed_content_revision: 1,
+        },
+      ],
+      error: null,
+    })
     remove.mockResolvedValue({ data: [{ id: 'edu-1' }], error: null })
     const user = userEvent.setup()
     renderPage()
