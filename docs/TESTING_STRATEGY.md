@@ -72,6 +72,31 @@ each rule gets explicit positive and negative test cases.
 
 ## Phase 1A profile implementation tests (future)
 
+**Implemented in the first profile-core/education slice**: pgTAP verifies refined profile and
+education schema/grants, browser denial of root-profile deletion and direct revision/review/primary
+writes, review freshness, primary switching/idempotence, and cascade safety. It also catalog-tests
+all eight Phase 1A privileged functions for `SECURITY DEFINER`, an empty hardened search path, and
+the exact callable surface: browser clients may execute only the constrained review and
+primary-selection RPCs. The real Auth/JWT/PostgREST suite covers column restrictions, education
+CRUD, primary switching, review staleness, cross-user denial, and concurrent mutation revision
+advancement; later Phase 1A domains remain future work.
+
+The corrective API coverage also explicitly verifies that neither an owner nor another browser
+user can delete a root profile, and that browser clients cannot directly insert revision or review
+metadata.
+
+The CI database job also runs `supabase/scripts/migration-compatibility-test.sh`. It uses the
+installed CLI's `supabase db reset --version` and `supabase migration up --local` commands to
+reset through Phase 0, insert synthetic legacy records, apply the Phase 1A migration, and verify
+row counts, long/blank legacy-text preservation, safe degree-year backfill, no inferred primary or
+status, neutral revisions, no reviews, migration provenance, and nullable migrated confirmation
+timestamps.
+
+The frontend component suite covers the user-observable loading, ready, missing, error, retry,
+zero-row, review-refresh, and pending-operation states for the basic-profile and education pages.
+Those pages never substitute a failed section-state request with “Not reviewed”; their visible
+status always comes from the returned revision/review state.
+
 - **Migration structure tests**: exact tables, direct `user_id` ownership, required foreign keys,
   ownership-safe composite parent references, primary-education partial unique constraint,
   typed-skill-evidence exactly-one-source check, bounded note, section-review/revision constraints,

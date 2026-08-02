@@ -1,168 +1,106 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { Link } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-
-interface ProfileRow {
-  user_id: string
-  headline: string | null
-}
-
-type Status = 'loading' | 'loaded' | 'empty' | 'error'
+import { educationRepository } from '../lib/educationRepository'
+import { profileRepository } from '../lib/profileRepository'
+import { profileReviewRepository } from '../lib/profileReviewRepository'
+import type { EducationEntry, SectionState } from '../lib/profileTypes'
+import { evaluateEducationSlice } from '../lib/profileCompleteness'
 
 export function ProfilePage() {
-  const { session, signOut } = useAuth()
+  const { session } = useAuth()
   const userId = session?.user.id
+  const [status, setStatus] = useState<'loading' | 'empty' | 'ready' | 'error'>(
+    'loading',
+  )
+  const [state, setState] = useState<SectionState[] | null>(null)
+  const [entries, setEntries] = useState<EducationEntry[]>([])
+  const [createError, setCreateError] = useState<string | null>(null)
 
-  const [status, setStatus] = useState<Status>('loading')
-  const [headline, setHeadline] = useState('')
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [signOutError, setSignOutError] = useState<string | null>(null)
-
-  const loadProfile = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!userId) return
     setStatus('loading')
-    setErrorMessage(null)
-
-    // RLS scopes this to the signed-in user's own row; a missing profile
-    // shows an "empty" state here, never another user's data -- there is no
-    // code path in this query that could return a row belonging to anyone
-    // else, regardless of what this component does with the result.
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('user_id, headline')
-      .eq('user_id', userId)
-      .maybeSingle<ProfileRow>()
-
-    if (error) {
-      setStatus('error')
-      setErrorMessage(error.message)
-      return
-    }
-    if (!data) {
-      setStatus('empty')
-      return
-    }
-    setHeadline(data.headline ?? '')
-    setStatus('loaded')
+    const [profile, education, sections] = await Promise.all([
+      profileRepository.get(userId),
+      educationRepository.list(userId),
+      profileReviewRepository.state(userId),
+    ])
+    if (profile.error || education.error || sections.error)
+      return setStatus('error')
+    if (!profile.data) return setStatus('empty')
+    setEntries(education.data)
+    setState(sections.data)
+    setStatus('ready')
   }, [userId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount pattern; state updates land asynchronously once the request resolves
-    void loadProfile()
-  }, [loadProfile])
-
-  async function handleCreateProfile() {
-    if (!userId) return
-    setSaving(true)
-    setErrorMessage(null)
-
-    const { error } = await supabase
-      .from('profiles')
-      .insert({ user_id: userId, headline: '' })
-
-    setSaving(false)
-    if (error) {
-      setStatus('error')
-      setErrorMessage(error.message)
-      return
-    }
-    await loadProfile()
-  }
-
-  async function handleSave(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!userId) return
-    setSaving(true)
-    setSaveMessage(null)
-    setErrorMessage(null)
-
-    // .select() makes the affected rows come back in `data` so a save that
-    // matches zero rows (RLS-filtered, or the row was deleted concurrently)
-    // can be told apart from an actual save -- PostgREST returns 200 with no
-    // error in both cases, so `error` alone is not enough to confirm success.
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ headline })
-      .eq('user_id', userId)
-      .select('user_id')
-
-    setSaving(false)
-    if (error) {
-      setErrorMessage(error.message)
-      return
-    }
-    if (!data || data.length === 0) {
-      await loadProfile()
-      return
-    }
-    setSaveMessage('Saved.')
-  }
-
-  async function handleSignOut() {
-    setSignOutError(null)
-    const { error } = await signOut()
-    if (error) {
-      setSignOutError(error)
-    }
-  }
-
-  return (
-    <main>
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-        }}
-      >
-        <h1>Your profile</h1>
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous initial load updates state after the repository resolves
+    void load()
+  }, [load])
+  if (status === 'loading')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p>Loading…</p>
+      </section>
+    )
+  if (status === 'error')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p role="alert">Your profile could not be loaded.</p>
+        <button type="button" onClick={() => void load()}>
+          Retry
+        </button>
+      </section>
+    )
+  if (status === 'empty')
+    return (
+      <section>
+        <h2>Your profile</h2>
+        <p>No profile yet.</p>
+        {createError && <p role="alert">{createError}</p>}
         <button
           type="button"
-          className="secondary"
-          onClick={() => void handleSignOut()}
+          onClick={() =>
+            userId &&
+            void profileRepository
+              .create(userId)
+              .then((result) =>
+                result.error
+                  ? setCreateError(
+                      'Profile could not be created. Please try again.',
+                    )
+                  : load(),
+              )
+          }
         >
-          Sign out
+          Create profile
         </button>
-      </header>
-
-      {signOutError && <p role="alert">{signOutError}</p>}
-
-      {status === 'loading' && <p>Loading…</p>}
-
-      {status === 'error' && <p role="alert">{errorMessage}</p>}
-
-      {status === 'empty' && (
-        <div>
-          <p>No profile yet.</p>
-          <button
-            type="button"
-            onClick={() => void handleCreateProfile()}
-            disabled={saving}
-          >
-            {saving ? 'Creating…' : 'Create profile'}
-          </button>
-        </div>
-      )}
-
-      {status === 'loaded' && (
-        <form onSubmit={handleSave}>
-          <div>
-            <label htmlFor="headline">Headline</label>
-            <input
-              id="headline"
-              name="headline"
-              value={headline}
-              onChange={(event) => setHeadline(event.target.value)}
-            />
-          </div>
-          <button type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {saveMessage && <p>{saveMessage}</p>}
-        </form>
-      )}
-    </main>
+      </section>
+    )
+  const checks = evaluateEducationSlice(entries, state ?? [])
+  return (
+    <section>
+      <h2>Your profile</h2>
+      <p>Complete the implemented profile details below.</p>
+      <ul>
+        {checks.map((check) => (
+          <li key={check.id}>
+            <strong>{check.id.replaceAll('_', ' ')}:</strong>{' '}
+            {check.outcome === 'present' ? (
+              'Present'
+            ) : (
+              <Link to={check.href}>{check.action}</Link>
+            )}
+          </li>
+        ))}
+      </ul>
+      <h3>Not yet available</h3>
+      <p>
+        Experience, skills, languages, preferences, targets, and work
+        eligibility are not yet available in CareerOS.
+      </p>
+    </section>
   )
 }

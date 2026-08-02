@@ -69,14 +69,11 @@ select is(
   'user A cannot update user B''s profile (0 rows affected)'
 );
 
-with del as (
-  delete from public.profiles where user_id = '22222222-2222-2222-2222-222222222222'
-  returning 1
-)
-select is(
-  (select count(*)::int from del),
-  0,
-  'user A cannot delete user B''s profile (0 rows affected)'
+select throws_ok(
+  $$ delete from public.profiles where user_id = '22222222-2222-2222-2222-222222222222' $$,
+  '42501'::char(5),
+  null,
+  'user A has no profile DELETE privilege'
 );
 
 select throws_ok(
@@ -114,14 +111,16 @@ select is(
   'service_role can read both users'' profiles (deliberate RLS bypass, not a leak)'
 );
 
--- ---- Back to user A: owner delete (run last; mutates state other tests rely on) --
+-- ---- Back to user A: root profile delete is deliberately unavailable -------
 reset role;
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
 set role authenticated;
 
-select lives_ok(
+select throws_ok(
   $$ delete from public.profiles where user_id = '11111111-1111-1111-1111-111111111111' $$,
-  'user A can delete their own profile'
+  '42501'::char(5),
+  null,
+  'user A cannot delete their own root profile'
 );
 
 reset role;

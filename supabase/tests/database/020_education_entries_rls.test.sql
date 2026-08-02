@@ -23,26 +23,26 @@ select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-
 set role authenticated;
 
 select lives_ok(
-  $$ insert into public.education_entries (id, user_id, institution) values ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'University of A') $$,
+  $$ insert into public.education_entries (user_id, institution) values ('11111111-1111-1111-1111-111111111111', 'University of A') $$,
   'user A can insert their own education entry'
 );
 select lives_ok(
-  $$ insert into public.education_entries (id, user_id, institution) values ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Second entry, deleted later') $$,
+  $$ insert into public.education_entries (user_id, institution) values ('11111111-1111-1111-1111-111111111111', 'Second entry, deleted later') $$,
   'user A can insert a second education entry'
 );
 
 select is(
-  (select institution from public.education_entries where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  (select institution from public.education_entries where institution = 'University of A'),
   'University of A',
   'user A can select their own education entry'
 );
 
 select lives_ok(
-  $$ update public.education_entries set institution = 'University of A (renamed)' where id = 'aaaaaaaa-0000-0000-0000-000000000001' $$,
+  $$ update public.education_entries set institution = 'University of A (renamed)' where institution = 'University of A' $$,
   'user A can update their own education entry'
 );
 select is(
-  (select institution from public.education_entries where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  (select institution from public.education_entries where institution = 'University of A (renamed)'),
   'University of A (renamed)',
   'user A''s update to their own education entry was applied'
 );
@@ -53,7 +53,7 @@ select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-
 set role authenticated;
 
 select lives_ok(
-  $$ insert into public.education_entries (id, user_id, institution) values ('bbbbbbbb-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'University of B') $$,
+  $$ insert into public.education_entries (user_id, institution) values ('22222222-2222-2222-2222-222222222222', 'University of B') $$,
   'user B can insert their own education entry'
 );
 
@@ -91,7 +91,7 @@ select is(
 -- names B as the owner, even though the FK target (profiles.user_id = B)
 -- legitimately exists.
 select throws_ok(
-  $$ insert into public.education_entries (id, user_id, institution) values ('cccccccc-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'forged') $$,
+  $$ insert into public.education_entries (user_id, institution) values ('22222222-2222-2222-2222-222222222222', 'forged') $$,
   '42501'::char(5),
   null,
   'user A cannot insert an education entry with user_id = user B (foreign-key-bypass attempt)'
@@ -99,14 +99,11 @@ select throws_ok(
 
 -- The ownership-rewrite test: A must not be able to "claim" B's existing
 -- entry by rewriting its user_id to A's own id.
-with upd as (
-  update public.education_entries set user_id = '11111111-1111-1111-1111-111111111111' where id = 'bbbbbbbb-0000-0000-0000-000000000001'
-  returning 1
-)
-select is(
-  (select count(*)::int from upd),
-  0,
-  'user A cannot take ownership of user B''s education entry by rewriting its user_id'
+select throws_ok(
+  $$ update public.education_entries set user_id = '11111111-1111-1111-1111-111111111111' where institution = 'University of B' $$,
+  '42501'::char(5),
+  null,
+  'user A cannot take ownership of an education entry by rewriting user_id'
 );
 
 -- ---- Anonymous: insufficient privilege, not merely empty rows -------------
@@ -121,7 +118,7 @@ select throws_ok(
   'anonymous SELECT on education_entries is rejected with insufficient privilege'
 );
 select throws_ok(
-  $$ insert into public.education_entries (id, user_id, institution) values ('dddddddd-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'anon') $$,
+  $$ insert into public.education_entries (user_id, institution) values ('11111111-1111-1111-1111-111111111111', 'anon') $$,
   '42501'::char(5),
   null,
   'anonymous INSERT on education_entries is rejected with insufficient privilege'
@@ -143,7 +140,7 @@ select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-
 set role authenticated;
 
 select lives_ok(
-  $$ delete from public.education_entries where id = 'aaaaaaaa-0000-0000-0000-000000000002' $$,
+  $$ delete from public.education_entries where institution = 'Second entry, deleted later' $$,
   'user A can delete their own education entry'
 );
 

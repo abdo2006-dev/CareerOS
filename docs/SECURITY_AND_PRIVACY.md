@@ -46,6 +46,13 @@ SELECT/INSERT/UPDATE/DELETE permissions, the expected RLS predicate, anonymous-a
 the isolation test each row requires. This section states the *principle*; that document is the
 *checklist* a migration must satisfy.
 
+**Implemented Phase 1A profile-core hardening**: section revisions and reviews are browser
+read-only. The only review mutation is a narrowly granted `SECURITY DEFINER` RPC that derives the
+caller from `auth.uid()`, locks that user's current revision, and records that exact value. Primary
+education selection likewise uses a narrowly granted ownership-checking RPC; browser clients do
+not have column privilege to set `is_primary` directly. Every privileged function fixes its search
+path, revokes default `PUBLIC` execution, and grants only the browser RPCs to `authenticated`.
+
 **Row-level data isolation for future public users**: because the schema is already `user_id`-
 scoped and RLS-enforced, enabling additional user accounts later is a matter of allowing sign-up —
 the isolation mechanism doesn't change. This is the concrete mechanism behind the "private-first,

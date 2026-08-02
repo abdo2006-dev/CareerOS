@@ -80,6 +80,14 @@ async function adminGetProfile(userId) {
   return res.json();
 }
 
+async function adminGetRows(table, userId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?user_id=eq.${userId}`, {
+    headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+  });
+  if (!res.ok) throw new Error(`admin ${table} lookup failed: HTTP ${res.status}`);
+  return res.json();
+}
+
 async function verifyUserFullyRemoved(id) {
   const problems = [];
   const userRes = await adminGetUser(id);
@@ -89,6 +97,10 @@ async function verifyUserFullyRemoved(id) {
   const profileRows = await adminGetProfile(id);
   if (profileRows.length !== 0) {
     problems.push(`profile row for ${id} still present after user deletion (expected cascade delete)`);
+  }
+  for (const table of ['education_entries', 'profile_section_revisions', 'profile_section_reviews']) {
+    const rows = await adminGetRows(table, id);
+    if (rows.length !== 0) problems.push(`${table} rows for ${id} still present after user deletion (expected cascade delete)`);
   }
   return problems;
 }
@@ -178,6 +190,103 @@ async function main() {
     });
     check('user A can update their own profile', updateOwnA.ok && updateOwnA.data[0].headline === 'Updated by A');
 
+    const forgeProfileMetadata = await rest(tokenA, `/profiles?user_id=eq.${userA.id}`, {
+      method: 'PATCH',
+      body: { created_via: 'migration' },
+      prefer: 'return=representation',
+    });
+    check('user A cannot forge profile provenance through the REST API', !forgeProfileMetadata.ok && forgeProfileMetadata.status === 403);
+
+    const deleteOwnProfile = await rest(tokenA, `/profiles?user_id=eq.${userA.id}`, {
+      method: 'DELETE', prefer: 'return=representation',
+    });
+    check('user A cannot delete their own root profile through the browser role', !deleteOwnProfile.ok && deleteOwnProfile.status === 403);
+
+    // ---- education CRUD, primary RPC, and review freshness -----------------
+    const createEducationA = await rest(tokenA, '/education_entries', {
+      method: 'POST',
+      body: {
+        user_id: userA.id,
+        institution: 'Synthetic Integration University',
+        degree: 'BSc',
+        degree_year: 2,
+        education_status: 'current',
+        expected_graduation_month: 7,
+        expected_graduation_year: 2028,
+      },
+      prefer: 'return=representation',
+    });
+    const educationA = createEducationA.data?.[0];
+    check('user A can create current education via the REST API', createEducationA.ok && educationA?.institution === 'Synthetic Integration University');
+
+    const directPrimary = await rest(tokenA, `/education_entries?id=eq.${educationA.id}`, {
+      method: 'PATCH', body: { is_primary: true }, prefer: 'return=representation',
+    });
+    check('user A cannot directly set primary education', !directPrimary.ok && directPrimary.status === 403);
+
+    const selectPrimary = await rest(tokenA, '/rpc/set_primary_education', {
+      method: 'POST', body: { education_id: educationA.id },
+    });
+    check('user A can select their current education through the primary RPC', selectPrimary.ok);
+
+    const revisionsBeforeReview = await rest(tokenA, '/profile_section_revisions?select=section_key,content_revision');
+    check('user A can read their own section revisions', revisionsBeforeReview.ok && revisionsBeforeReview.data.length === 2);
+    const reviewEducation = await rest(tokenA, '/rpc/review_profile_section', {
+      method: 'POST', body: { requested_section_key: 'education' },
+    });
+    const reviewBasic = await rest(tokenA, '/rpc/review_profile_section', {
+      method: 'POST', body: { requested_section_key: 'basic_profile' },
+    });
+    check('user A can review both implemented sections through constrained RPCs', reviewEducation.ok && reviewBasic.ok);
+
+    const mutateProfileAfterReview = await rest(tokenA, `/profiles?user_id=eq.${userA.id}`, {
+      method: 'PATCH', body: { headline: 'Changed after review' }, prefer: 'return=representation',
+    });
+    const basicStateAfterMutation = await rest(tokenA, '/profile_section_revisions?section_key=eq.basic_profile&select=content_revision');
+    const basicReviewAfterMutation = await rest(tokenA, '/profile_section_reviews?section_key=eq.basic_profile&select=reviewed_content_revision');
+    check('a profile mutation makes the basic-profile review stale', mutateProfileAfterReview.ok && basicStateAfterMutation.ok && basicReviewAfterMutation.ok && basicStateAfterMutation.data[0].content_revision !== basicReviewAfterMutation.data[0].reviewed_content_revision);
+
+    const updateEducationA = await rest(tokenA, `/education_entries?id=eq.${educationA.id}`, {
+      method: 'PATCH', body: { field: 'Electrical Engineering' }, prefer: 'return=representation',
+    });
+    check('user A can update their education via the REST API', updateEducationA.ok && updateEducationA.data[0].field === 'Electrical Engineering');
+    const staleReview = await rest(tokenA, '/profile_section_reviews?select=section_key,reviewed_content_revision');
+    const afterMutationRevision = await rest(tokenA, '/profile_section_revisions?section_key=eq.education&select=content_revision');
+    check('an education mutation makes its recorded review stale', staleReview.ok && afterMutationRevision.ok && staleReview.data.find((row) => row.section_key === 'education').reviewed_content_revision !== afterMutationRevision.data[0].content_revision);
+
+    const createSecondEducationA = await rest(tokenA, '/education_entries', {
+      method: 'POST', body: { user_id: userA.id, institution: 'Second Current University', education_status: 'current' }, prefer: 'return=representation',
+    });
+    const secondEducationA = createSecondEducationA.data?.[0];
+    check('user A can create a second current education entry', createSecondEducationA.ok && secondEducationA?.education_status === 'current');
+    const switchPrimary = await rest(tokenA, '/rpc/set_primary_education', {
+      method: 'POST', body: { education_id: secondEducationA.id },
+    });
+    const primaryRows = await rest(tokenA, '/education_entries?select=id,is_primary');
+    check('switching primary leaves exactly the selected second entry primary', switchPrimary.ok && primaryRows.ok && primaryRows.data.filter((row) => row.is_primary).length === 1 && primaryRows.data.find((row) => row.is_primary)?.id === secondEducationA.id);
+    const revisionBeforeReselect = await rest(tokenA, '/profile_section_revisions?section_key=eq.education&select=content_revision');
+    const reselectPrimary = await rest(tokenA, '/rpc/set_primary_education', { method: 'POST', body: { education_id: secondEducationA.id } });
+    const revisionAfterReselect = await rest(tokenA, '/profile_section_revisions?section_key=eq.education&select=content_revision');
+    check('reselecting the current primary is idempotent', reselectPrimary.ok && revisionBeforeReselect.data[0].content_revision === revisionAfterReselect.data[0].content_revision);
+    const createCompletedEducationA = await rest(tokenA, '/education_entries', {
+      method: 'POST', body: { user_id: userA.id, institution: 'Completed University', education_status: 'completed', end_date: '2025-01-01' }, prefer: 'return=representation',
+    });
+    const nonCurrentPrimary = await rest(tokenA, '/rpc/set_primary_education', { method: 'POST', body: { education_id: createCompletedEducationA.data?.[0]?.id } });
+    check('a non-current education entry cannot become primary', !nonCurrentPrimary.ok && nonCurrentPrimary.status >= 400);
+    const deletePrimary = await rest(tokenA, `/education_entries?id=eq.${secondEducationA.id}`, { method: 'DELETE', prefer: 'return=representation' });
+    const primaryAfterDelete = await rest(tokenA, '/education_entries?select=id,is_primary');
+    check('deleting the selected primary does not automatically promote another entry', deletePrimary.ok && primaryAfterDelete.ok && primaryAfterDelete.data.filter((row) => row.is_primary).length === 0);
+    const reviewEducationAgain = await rest(tokenA, '/rpc/review_profile_section', { method: 'POST', body: { requested_section_key: 'education' } });
+    const revisionBeforeConcurrentUpdates = await rest(tokenA, '/profile_section_revisions?section_key=eq.education&select=content_revision');
+    const concurrentUpdates = await Promise.all([
+      rest(tokenA, `/education_entries?id=eq.${educationA.id}`, { method: 'PATCH', body: { degree: 'BSc revised once' }, prefer: 'return=representation' }),
+      rest(tokenA, `/education_entries?id=eq.${educationA.id}`, { method: 'PATCH', body: { field: 'Electrical Engineering revised' }, prefer: 'return=representation' }),
+    ]);
+    const revisionAfterConcurrentUpdates = await rest(tokenA, '/profile_section_revisions?section_key=eq.education&select=content_revision');
+    const educationReviewAfterConcurrentUpdates = await rest(tokenA, '/profile_section_reviews?section_key=eq.education&select=reviewed_content_revision');
+    check('concurrent education mutations advance revision monotonically without losing increments', reviewEducationAgain.ok && concurrentUpdates.every((result) => result.ok) && revisionAfterConcurrentUpdates.data[0].content_revision >= revisionBeforeConcurrentUpdates.data[0].content_revision + 2);
+    check('education review is stale after a later education mutation', educationReviewAfterConcurrentUpdates.ok && educationReviewAfterConcurrentUpdates.data[0].reviewed_content_revision !== revisionAfterConcurrentUpdates.data[0].content_revision);
+
     // ---- isolation: A cannot read or update B's data ----------------------
     const readBAsA = await rest(tokenA, `/profiles?user_id=eq.${userB.id}`, {});
     check('user A cannot read user B\'s profile (empty result, not an error)', readBAsA.ok && readBAsA.data.length === 0);
@@ -196,6 +305,33 @@ async function main() {
     });
     check('user A cannot insert an education entry owned by user B', !forgedInsert.ok && forgedInsert.status === 403);
 
+    const createEducationB = await rest(tokenB, '/education_entries', {
+      method: 'POST',
+      body: { user_id: userB.id, institution: 'Synthetic B University', education_status: 'current' },
+      prefer: 'return=representation',
+    });
+    const foreignPrimary = await rest(tokenA, '/rpc/set_primary_education', {
+      method: 'POST', body: { education_id: createEducationB.data?.[0]?.id },
+    });
+    check('user A cannot select user B\'s education as primary', !foreignPrimary.ok && foreignPrimary.status >= 400);
+
+    const revisionsAAsB = await rest(tokenB, `/profile_section_revisions?user_id=eq.${userA.id}`);
+    const reviewsAAsB = await rest(tokenB, `/profile_section_reviews?user_id=eq.${userA.id}`);
+    check('user B cannot read user A\'s revisions or reviews', revisionsAAsB.ok && reviewsAAsB.ok && revisionsAAsB.data.length === 0 && reviewsAAsB.data.length === 0);
+    const reviewB = await rest(tokenB, '/rpc/review_profile_section', { method: 'POST', body: { requested_section_key: 'basic_profile' } });
+    const reviewsAAfterBReview = await rest(tokenA, '/profile_section_reviews?section_key=eq.basic_profile&select=reviewed_content_revision');
+    check('user B\'s review RPC changes only user B\'s state', reviewB.ok && reviewsAAfterBReview.ok && reviewsAAfterBReview.data[0].reviewed_content_revision !== null);
+
+    const directRevisionWrite = await rest(tokenA, '/profile_section_revisions', {
+      method: 'POST', body: { user_id: userA.id, section_key: 'education', content_revision: 99 },
+    });
+    check('user A cannot directly forge section revisions', !directRevisionWrite.ok && directRevisionWrite.status === 403);
+
+    const directReviewWrite = await rest(tokenA, '/profile_section_reviews', {
+      method: 'POST', body: { user_id: userA.id, section_key: 'education', reviewed_content_revision: 999 },
+    });
+    check('user A cannot directly forge section reviews', !directReviewWrite.ok && directReviewWrite.status === 403);
+
     // ---- isolation: B cannot access A's data ------------------------------
     const readAAsB = await rest(tokenB, `/profiles?user_id=eq.${userA.id}`, {});
     check('user B cannot read user A\'s profile', readAAsB.ok && readAAsB.data.length === 0);
@@ -204,7 +340,7 @@ async function main() {
       method: 'DELETE',
       prefer: 'return=representation',
     });
-    check('user B cannot delete user A\'s profile (0 rows affected)', deleteAAsB.ok && deleteAAsB.data.length === 0);
+    check('user B cannot delete user A\'s profile (browser DELETE is not granted)', !deleteAAsB.ok && deleteAAsB.status === 403);
 
     console.log(`\nAll ${checkCount} checks passed.`);
   } finally {

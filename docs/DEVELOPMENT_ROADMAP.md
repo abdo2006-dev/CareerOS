@@ -25,16 +25,17 @@ process.
 save it (RLS-permitted), sign out — verified both by automated tests and by hand in a real
 browser against the real local stack. No opportunity data yet.
 
-## Next implementation PR — Profile core and primary education vertical slice
+## First Phase 1A PR — Profile core and primary education vertical slice — **implemented**
 
-This remains deliberately small. It will implement only the forward migration of existing Phase 0
+This deliberately small slice implements only the forward migration of existing Phase 0
 education values, refined `profiles` and `education_entries`, `profile_section_reviews` for
 `basic_profile` and `education`, exact grants/RLS/pgTAP/API tests, React Router foundation, profile
 overview, education CRUD, and completeness checks limited to those implemented inputs. It must not
 claim full completeness while other Phase 1A domains do not exist.
 
-The forward migration must preserve `profiles.degree_program` and `profiles.degree_year` by copying
-them into the selected or created primary education row before they stop being authoritative.
+The migration retains the legacy fields as deprecated compatibility data. It safely copies a legacy
+degree year only to one existing education row when unambiguous; it does not select a primary,
+infer a status, or map the ambiguous degree-program text.
 
 ## Phase 1A — Structured manual career profile
 
