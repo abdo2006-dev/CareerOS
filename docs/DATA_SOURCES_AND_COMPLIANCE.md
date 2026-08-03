@@ -136,7 +136,7 @@ document) — not duplicated here.
 | Terms/reuse status | **Public browser accessibility does not constitute a supported API.** No Workday developer documentation describing third-party use of this endpoint was found |
 | Date reviewed | 2026-08-03 |
 | **MVP decision** | **Do not use.** Do not implement this or any other undocumented SPA endpoint merely because it responds without authentication |
-| Reason | This is precisely the case [DATA_SOURCES_AND_COMPLIANCE.md](#) exists to guard against: an endpoint being reachable is not the same as it being an intended, documented integration point |
+| Reason | This is precisely the case this registry exists to guard against: an endpoint being reachable is not the same as it being an intended, documented integration point |
 
 #### SAP SuccessFactors career sites (e.g. Fraunhofer) — **Manual import only**
 
