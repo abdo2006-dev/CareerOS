@@ -81,10 +81,10 @@ erDiagram
 
 ## Profile domain (Phase 1A proposal; user-owned unless marked shared)
 
-**Implementation status**: the first Phase 1A vertical slice is implemented: refined
-`profiles`, refined `education_entries`, and section freshness/review rows for `basic_profile`
-and `education`. The remaining profile-domain tables below remain logical targets, not
-implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
+**Implementation status**: the implemented Phase 1A slices include refined `profiles`, refined
+`education_entries`, `work_experience`, and section freshness/review rows for `basic_profile`,
+`education`, and `experience`. The remaining profile-domain tables below remain logical targets,
+not implemented SQL. Phase 1B resume and suggestion records are expressly excluded.
 
 ### Implemented profile-core migration note
 
@@ -116,7 +116,7 @@ row context, not a Phase 1B provenance solution.
 | `education_entries` | Education history and authoritative education facts; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; institution, degree, field, `degree_year`, expected graduation month/year, start date, and `education_status`; date/order checks. `is_primary` is optional, but partial unique `(user_id) WHERE is_primary` permits at most one primary entry. A primary normally must be current; explicit status constraint enforces that relationship. Multiple active entries remain allowed. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, matching, evidence. A later forward migration copies Phase 0 `profiles.degree_program`/`degree_year` into the selected or created primary entry before removing their authoritative role. |
 | `profile_section_reviews` | Deliberate review of a UI section, including intentionally empty sections; user-owned; composite PK `(user_id, section_key)`. | `(user_id)` → profiles; controlled keys: `basic_profile`, `education`, `experience`, `projects`, `skills`, `languages`, `preferences`, `work_eligibility`; `reviewed_at`, `reviewed_content_revision`, timestamps. | Cascade from profile; own-row RLS; High; browser CRUD; deterministic review state/completeness. |
 | `profile_section_revisions` | Minimal deletion-safe content freshness state; user-owned metadata; composite PK `(user_id, section_key)`. | Same controlled keys; non-negative monotonic `content_revision`, `updated_at`. Created at revision zero for each section; database-maintained mutation path increments it transactionally on relevant row create/update/delete. | Cascade from profile; own-row RLS; Medium; browser SELECT only; supports review freshness without a reset-flag trigger. |
-| `work_experience` | Employment, research, or volunteering evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; role/organization required; date order; bounded description. | Cascade from profile; own-row RLS; High; browser CRUD; evidence and future matching. |
+| `work_experience` | Employment, internship, research, volunteering, student-leadership, or other evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; `UNIQUE (user_id, id)` reserves an ownership-safe future evidence target. Required kind, organization, role, and start year; optional month precision and bounded plain-text location/description. End periods cannot precede start periods; a current row has no end period. | Cascade from profile; own-row RLS; High; browser CRUD; experience review/completeness and future matching. Deleting a future evidence target must cascade only its evidence rows, not the user’s skill claim. |
 | `projects` | User project evidence; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; title required; bounded description; optional safe URL. | Cascade from profile; own-row RLS; High; browser CRUD; completeness, evidence, matching. |
 | `profile_links` | Links to portfolio/GitHub/public work; user-owned; `id` PK, direct `user_id`. | `(user_id)` → `profiles`; URL scheme/length allowlist; labeled link. | Cascade from profile; own-row RLS; Medium; browser CRUD; evidence and optional enrichment. |
 | `skills_catalog` | Small canonical skill names for matching; shared; `id` PK. | Normalized canonical name unique; bounded category and controlled `is_technical` classification; no user data. | Service maintains; authenticated read only; Low; browser SELECT only; matching and market aggregation. |

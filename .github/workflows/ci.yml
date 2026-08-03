@@ -65,6 +65,9 @@ jobs:
       - name: Verify Phase 0-to-Phase 1A migration compatibility
         run: ./supabase/scripts/migration-compatibility-test.sh
 
+      - name: Verify profile-core-to-experience migration compatibility
+        run: ./supabase/scripts/work-experience-migration-compatibility-test.sh
+
       - name: Reset database from empty for test suite
         run: supabase db reset
 
