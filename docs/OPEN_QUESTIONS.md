@@ -6,14 +6,15 @@ phase that needs it.
 
 ## Product
 
-- **Exact MVP source list**: the user has named a target-employer watchlist (Airbus, Siemens,
-  NXP, Texas Instruments, OHB, Rohde & Schwarz, Bosch, Infineon, Mercedes-Benz, DLR, Fraunhofer
-  institutes, and other Bremen/Hamburg-area employers — see
-  [DATA_SOURCES_AND_COMPLIANCE.md §6](DATA_SOURCES_AND_COMPLIANCE.md#6-target-employer-watchlist-proposed-not-approved)),
-  which resolves *which employers* to prioritize. What remains open, per employer, is **which
-  recruitment system each one actually uses today and whether that system is a compliant source**
-  — this has not been verified for any of them and must happen before an adapter is built for any
-  specific one.
+- ~~**Exact MVP source list — which recruitment system each target employer uses**~~ —
+  **resolved by research in Phase 2A.0**: see
+  [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md) for the dated, per-employer
+  findings (Bosch/Continental on SmartRecruiters; Airbus on an undocumented Workday endpoint;
+  Siemens/Infineon/TI/NXP/Deutsche Bahn/Rheinmetall/Hensoldt/Telekom/BMW/Mercedes-Benz/
+  Beckhoff/Phoenix Contact/Rohde & Schwarz/OHB/Fraunhofer/DLR/university career pages all on custom
+  or SAP SuccessFactors sites with no documented public API). What remains open is narrower and
+  listed below: whether the SmartRecruiters access conflict can be resolved, and which specific
+  reviewed sources enter the first source configuration.
 - **Scoring thresholds**: the boundaries between Strong target / Realistic / Reach / Currently
   unsuitable are described qualitatively in
   [SCORING_AND_MATCHING_MODEL.md](SCORING_AND_MATCHING_MODEL.md) but not numerically — these need
@@ -40,14 +41,43 @@ phase that needs it.
   legacy row is selected as primary or inferred current. A degree year is copied only to exactly
   one existing row when empty; ambiguous program text remains a deprecated read-only notice for
   manual review.
+- ~~**Ingestion runtime language and execution model**~~ — **resolved in Phase 2A.0**: TypeScript
+  ([ADR-016](adr/ADR-016-typescript-ingestion-runtime.md)), local CLI execution first
+  ([ADR-017](adr/ADR-017-local-first-ingestion-execution.md)). Resume parsing's language/execution
+  model is explicitly **not** resolved by either ADR — see the Resume-parsing entry above.
+- ~~**Manual vs. shared opportunity ownership**~~ — **resolved in Phase 2A.0**: manually entered
+  opportunities are private, user-owned rows in a separate `private_opportunities` table, never
+  shared records — see [ADR-018](adr/ADR-018-private-manual-opportunities.md).
 
 ## Compliance
 
-- **Per-source terms-of-service review**: [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md)
-  names source *categories* and plausible examples (Greenhouse/Lever, Bundesagentur für Arbeit,
-  EURES) but each specific source's current terms must be actually read before an adapter is
-  built — this planning phase did not do that legal review, and it should not be treated as
-  already cleared.
+- ~~**Per-source terms-of-service review (initial pass)**~~ — **substantially done in Phase 2A.0**
+  for the sources actually evaluated: see the dated matrix in
+  [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md) for Greenhouse, Lever, Workable,
+  SmartRecruiters, Bundesagentur für Arbeit, Make it in Germany, Workday-based sites, EURES,
+  EURAXESS, and the researched target-employer career sites. What remains genuinely open:
+  - **SmartRecruiters written clarification**: the documented Posting API and its
+    `robots.txt` (`Disallow: /` for all agents except one named crawler) conflict; this blocks the
+    single highest-coverage source found (Bosch, Continental) until resolved in writing — not by
+    interpretation.
+  - **Terms re-review cadence**: this pass is a dated snapshot, not a standing guarantee; each
+    enabled source needs a periodic re-check against its own `terms_reviewed_at` date (see
+    [INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md)).
+  - **Whether Workable's feed cost is ever justified**: rejected for the MVP on measured bandwidth
+    (see [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md)); reconsider only if
+    Workable publishes a filtered endpoint or a later hosted worker can affordably stream the full
+    feed.
+- **Which specific reviewed Greenhouse employer boards enter the first source configuration** —
+  a shortlist, not a compliance question; decide at Phase 2A.2 implementation time.
+- **Raw-payload retention period and snapshot-retention limits**: this pass reaffirms the existing
+  policy (sanitized snapshots only, no indefinite raw retention — see
+  [ARCHITECTURE.md](ARCHITECTURE.md#raw-external-content-retention-policy)) but does not set a
+  specific `opportunity_versions` retention limit; revisit only if storage growth becomes a
+  measured problem (see [COST_MODEL.md](COST_MODEL.md)).
+- **Hosted execution platform after local validation**: [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)
+  names Supabase Edge Functions and Cloudflare Workers as candidates and states the trigger
+  conditions for evaluating each, but does not choose between them now — that choice is deferred
+  until local execution actually becomes a bottleneck.
 - **Whether the GitHub Student Developer Pack (or similar) is already active** for this user —
   affects the realistic fallback options in [COST_MODEL.md](COST_MODEL.md).
 
