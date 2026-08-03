@@ -34,6 +34,11 @@ vi.mock('./lib/educationRepository', () => ({
     list: () => Promise.resolve({ data: [], error: null }),
   },
 }))
+vi.mock('./lib/experienceRepository', () => ({
+  experienceRepository: {
+    list: () => Promise.resolve({ data: [], error: null }),
+  },
+}))
 vi.mock('./lib/profileReviewRepository', () => ({
   profileReviewRepository: {
     state: () => Promise.resolve({ data: [], error: null }),

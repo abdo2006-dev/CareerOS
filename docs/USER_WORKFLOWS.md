@@ -5,10 +5,12 @@ architecture and data-model decisions grounded in real usage rather than abstrac
 
 ## Workflow 1 — Phase 1A manual profile setup
 
-**Implemented first slice**: the routed profile workspace currently supports basic-profile editing
-and education drafts/CRUD. A user explicitly selects one current education as primary; no other
-entry is promoted automatically. The overview shows only the implemented review/education checks
-and labels all other Phase 1A sections as not yet available.
+**Implemented slices**: the routed profile workspace supports basic-profile editing, education
+drafts/CRUD, and experience/research CRUD. Experience uses a controlled kind, honest year plus
+optional month periods, independent review, and no invented end date for current or unknown-ended
+roles. A user explicitly selects one current education as primary; no other entry is promoted
+automatically. The overview shows only implemented review checks and labels remaining Phase 1A
+sections as not yet available.
 
 1. User signs in and sees a profile overview with named completeness checks and concrete next
    actions, never just a mysterious percentage.

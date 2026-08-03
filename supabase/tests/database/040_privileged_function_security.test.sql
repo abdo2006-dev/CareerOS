@@ -1,7 +1,7 @@
 -- Every Phase 1A function is deliberately SECURITY DEFINER with an empty
 -- search_path. Browser roles may execute only the two constrained RPCs.
 begin;
-select plan(40);
+select plan(50);
 
 with functions(signature, label, browser_callable) as (
   values
@@ -11,6 +11,8 @@ with functions(signature, label, browser_callable) as (
     ('public.increment_profile_section_revision(uuid,text)', 'increment_profile_section_revision', false),
     ('public.profiles_after_content_change()', 'profiles_after_content_change', false),
     ('public.education_entries_after_content_change()', 'education_entries_after_content_change', false),
+    ('public.work_experience_before_write()', 'work_experience_before_write', false),
+    ('public.work_experience_after_content_change()', 'work_experience_after_content_change', false),
     ('public.review_profile_section(text)', 'review_profile_section', true),
     ('public.set_primary_education(uuid)', 'set_primary_education', true)
 )
@@ -24,6 +26,8 @@ with functions(signature, label) as (
     ('public.increment_profile_section_revision(uuid,text)', 'increment_profile_section_revision'),
     ('public.profiles_after_content_change()', 'profiles_after_content_change'),
     ('public.education_entries_after_content_change()', 'education_entries_after_content_change'),
+    ('public.work_experience_before_write()', 'work_experience_before_write'),
+    ('public.work_experience_after_content_change()', 'work_experience_after_content_change'),
     ('public.review_profile_section(text)', 'review_profile_section'),
     ('public.set_primary_education(uuid)', 'set_primary_education')
 )
@@ -40,6 +44,8 @@ with functions(signature, label) as (
     ('public.increment_profile_section_revision(uuid,text)', 'increment_profile_section_revision'),
     ('public.profiles_after_content_change()', 'profiles_after_content_change'),
     ('public.education_entries_after_content_change()', 'education_entries_after_content_change'),
+    ('public.work_experience_before_write()', 'work_experience_before_write'),
+    ('public.work_experience_after_content_change()', 'work_experience_after_content_change'),
     ('public.review_profile_section(text)', 'review_profile_section'),
     ('public.set_primary_education(uuid)', 'set_primary_education')
 )
@@ -60,6 +66,8 @@ with functions(signature, label) as (
     ('public.increment_profile_section_revision(uuid,text)', 'increment_profile_section_revision'),
     ('public.profiles_after_content_change()', 'profiles_after_content_change'),
     ('public.education_entries_after_content_change()', 'education_entries_after_content_change'),
+    ('public.work_experience_before_write()', 'work_experience_before_write'),
+    ('public.work_experience_after_content_change()', 'work_experience_after_content_change'),
     ('public.review_profile_section(text)', 'review_profile_section'),
     ('public.set_primary_education(uuid)', 'set_primary_education')
 )
@@ -77,6 +85,8 @@ with functions(signature, label, browser_callable) as (
     ('public.increment_profile_section_revision(uuid,text)', 'increment_profile_section_revision', false),
     ('public.profiles_after_content_change()', 'profiles_after_content_change', false),
     ('public.education_entries_after_content_change()', 'education_entries_after_content_change', false),
+    ('public.work_experience_before_write()', 'work_experience_before_write', false),
+    ('public.work_experience_after_content_change()', 'work_experience_after_content_change', false),
     ('public.review_profile_section(text)', 'review_profile_section', true),
     ('public.set_primary_education(uuid)', 'set_primary_education', true)
 )

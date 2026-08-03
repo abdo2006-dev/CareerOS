@@ -57,10 +57,10 @@ both this file and its corresponding test.
 
 ## Profile domain (user-owned)
 
-**Status**: `profiles`, `education_entries`, `profile_section_revisions`, and
-`profile_section_reviews` are implemented and pgTAP-tested in the first Phase 1A slice. All other
-rows in this profile-domain section remain proposed Phase 1A policy, not schema. Phase 1B
-resume/suggestion tables are intentionally not designed here.
+**Status**: `profiles`, `education_entries`, `work_experience`,
+`profile_section_revisions`, and `profile_section_reviews` are implemented and pgTAP-tested.
+All other rows in this profile-domain section remain proposed Phase 1A policy, not schema. Phase
+1B resume/suggestion tables are intentionally not designed here.
 
 Every table's owner column is literally named `user_id` (see [AGENTS.md](../AGENTS.md)) — child
 tables reference the owning user via a direct `user_id` foreign key to `profiles.user_id`, never
@@ -71,7 +71,8 @@ once per statement rather than once per row — the currently-recommended, non-d
 | Table(s) | Category / owner | Browser SELECT | Browser INSERT | Browser UPDATE | Browser DELETE | Service-role | Expected RLS predicate | Anon access | Required isolation and ownership-bypass test | Sensitivity |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `profiles` | User-owned root row; direct `user_id` references Auth user | Own only | Own only | Own only | **No direct browser DELETE** | Trusted service/administrative code may have broader maintenance, export, repair, and coordinated-account-deletion access. Root-profile deletion is permitted only in an explicit trusted workflow that coordinates the Auth user, database records, Storage objects, confirmation, and any export requirement — never as a normal browser or routine service-role path. | `(select auth.uid()) = user_id` for SELECT/INSERT/UPDATE; no browser DELETE grant/policy | No | Owner SELECT/INSERT/UPDATE; DELETE fails even for owner; cross-user and forged-owner denial; service deletion is exercised only through the trusted workflow | High |
-| `education_entries`, `work_experience`, `projects`, `profile_links`, `user_skills`, `user_languages`, `preferences`, `target_companies` | User-owned; direct `user_id` references `profiles(user_id)` | Own only | Own only | Own only | Own only | Full for maintenance/export/account deletion | `(select auth.uid()) = user_id` for `USING` and `WITH CHECK` | No | Owner CRUD; cross-user SELECT/UPDATE/DELETE denial; forged `user_id` insert; ownership-rewrite denial | High (`profile_links`/targets Medium) |
+| `education_entries`, `work_experience` | **Implemented** user-owned history/evidence; direct `user_id` references `profiles(user_id)` | Own only | Own only | Own only, content columns only | Own only | Explicit full maintenance access | `(select auth.uid()) = user_id` for `USING` and `WITH CHECK` | No | Owner CRUD; cross-user SELECT/UPDATE/DELETE denial; forged `user_id` insert; ownership-rewrite, provenance, and timestamp-write denial | High |
+| `projects`, `profile_links`, `user_skills`, `user_languages`, `preferences`, `target_companies` | Proposed user-owned; direct `user_id` references `profiles(user_id)` | Own only | Own only | Own only | Own only | Full for maintenance/export/account deletion | `(select auth.uid()) = user_id` for `USING` and `WITH CHECK` | No | Owner CRUD; cross-user SELECT/UPDATE/DELETE denial; forged `user_id` insert; ownership-rewrite denial | High (`profile_links`/targets Medium) |
 | `profile_section_reviews` | User-owned deliberate review; composite key `(user_id, section_key)` | Own only | **No direct browser write**; restricted RPC only | **No direct browser write**; restricted RPC only | **No direct browser write** | Full | Direct owner SELECT; `review_profile_section` derives `auth.uid()` and locks the current revision | No | User cannot forge an owner/key/revision; RPC writes only the locked current revision | High |
 | `profile_section_revisions` | User-owned, database-maintained freshness metadata | Own only | No direct browser write | No direct browser write | No direct browser write | Trusted migration/mutation mechanism only | Direct owner SELECT; no browser mutation grant | No | User can read only own revision; browser cannot forge/increment/rewrite revision; relevant insert/update/delete increments it atomically | Medium |
 | `preference_locations`, `user_target_engineering_areas`, `user_target_role_types` | User-owned relation; direct `user_id` | Own only | Own only | Own only where applicable | Own only | Full | Direct owner predicate plus composite parent `(user_id, parent_id)` validation | No | Owner CRUD; all cross-user denials; forged owner; cannot attach a valid user A row to B's preferences/profile | Medium |

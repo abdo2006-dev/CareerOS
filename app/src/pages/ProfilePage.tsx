@@ -2,10 +2,15 @@ import { Link } from 'react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { educationRepository } from '../lib/educationRepository'
+import { experienceRepository } from '../lib/experienceRepository'
 import { profileRepository } from '../lib/profileRepository'
 import { profileReviewRepository } from '../lib/profileReviewRepository'
-import type { EducationEntry, SectionState } from '../lib/profileTypes'
-import { evaluateEducationSlice } from '../lib/profileCompleteness'
+import type {
+  EducationEntry,
+  SectionState,
+  WorkExperience,
+} from '../lib/profileTypes'
+import { evaluateExperienceSlice } from '../lib/profileCompleteness'
 
 export function ProfilePage() {
   const { session } = useAuth()
@@ -15,20 +20,28 @@ export function ProfilePage() {
   )
   const [state, setState] = useState<SectionState[] | null>(null)
   const [entries, setEntries] = useState<EducationEntry[]>([])
+  const [experience, setExperience] = useState<WorkExperience[]>([])
   const [createError, setCreateError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!userId) return
     setStatus('loading')
-    const [profile, education, sections] = await Promise.all([
+    const [profile, education, experienceResult, sections] = await Promise.all([
       profileRepository.get(userId),
       educationRepository.list(userId),
+      experienceRepository.list(userId),
       profileReviewRepository.state(userId),
     ])
-    if (profile.error || education.error || sections.error)
+    if (
+      profile.error ||
+      education.error ||
+      experienceResult.error ||
+      sections.error
+    )
       return setStatus('error')
     if (!profile.data) return setStatus('empty')
     setEntries(education.data)
+    setExperience(experienceResult.data)
     setState(sections.data)
     setStatus('ready')
   }, [userId])
@@ -79,28 +92,35 @@ export function ProfilePage() {
         </button>
       </section>
     )
-  const checks = evaluateEducationSlice(entries, state ?? [])
+  const checks = evaluateExperienceSlice(entries, state ?? [], experience)
+  const implementedChecks = checks.filter(
+    (check) => check.availability === 'implemented',
+  )
+  const deferredChecks = checks.filter(
+    (check) => check.availability === 'not_implemented',
+  )
   return (
     <section>
       <h2>Your profile</h2>
       <p>Complete the implemented profile details below.</p>
       <ul>
-        {checks.map((check) => (
+        {implementedChecks.map((check) => (
           <li key={check.id}>
             <strong>{check.id.replaceAll('_', ' ')}:</strong>{' '}
             {check.outcome === 'present' ? (
               'Present'
-            ) : (
+            ) : check.href ? (
               <Link to={check.href}>{check.action}</Link>
-            )}
+            ) : null}
           </li>
         ))}
       </ul>
       <h3>Not yet available</h3>
-      <p>
-        Experience, skills, languages, preferences, targets, and work
-        eligibility are not yet available in CareerOS.
-      </p>
+      <ul>
+        {deferredChecks.map((check) => (
+          <li key={check.id}>{check.action}</li>
+        ))}
+      </ul>
     </section>
   )
 }

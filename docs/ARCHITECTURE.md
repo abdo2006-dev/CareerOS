@@ -100,6 +100,11 @@ remain enough until shared cached queries across routes, repetitive mutation inv
 background refresh, optimistic updates, or more complex server-state coordination provides a
 concrete need.
 
+**Implemented slices**: the profile workspace now includes Basic Profile, Education, and
+Experience and Research routes. The experience collection uses the same independent-save,
+explicit-reload pattern as education; its dates carry year plus optional month precision rather
+than a fabricated day. Projects/links and every remaining Phase 1A section are still deferred.
+
 ### Data and auth layer — Supabase (managed Postgres + Auth + Storage)
 
 Supabase is not treated as a black box; it is specifically "managed Postgres with batteries." The

@@ -2,7 +2,7 @@
 -- policy existence, and grant existence (including the absence of any
 -- grant to anon). No fixture data needed; this only inspects catalogs.
 begin;
-select plan(58);
+select plan(63);
 
 -- profiles ------------------------------------------------------------------
 
@@ -102,6 +102,11 @@ select table_privs_are('public', 'profile_section_reviews', 'anon', array[]::tex
 select has_index('public', 'education_entries', 'education_entries_one_primary_per_user_idx', 'partial primary education index exists');
 select has_function('public', 'review_profile_section', array['text'], 'review RPC exists');
 select has_function('public', 'set_primary_education', array['uuid'], 'primary selection RPC exists');
+select has_table('public', 'work_experience', 'work_experience table exists');
+select has_column('public', 'work_experience', 'user_id', 'work_experience owns directly through user_id');
+select col_is_pk('public', 'work_experience', 'id', 'work_experience.id is the primary key');
+select fk_ok('public', 'work_experience', 'user_id', 'public', 'profiles', 'user_id', 'work_experience.user_id references profiles.user_id');
+select has_index('public', 'work_experience', 'work_experience_user_chronology_idx', 'experience chronology index exists');
 
 select * from finish();
 rollback;

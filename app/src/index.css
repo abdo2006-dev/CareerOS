@@ -56,13 +56,27 @@ label {
   font-size: 0.9rem;
 }
 
-input {
+input,
+select,
+textarea {
   font: inherit;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
+}
+
+textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 1.5rem;
 }
 
 button {
