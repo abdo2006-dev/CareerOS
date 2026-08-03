@@ -36,7 +36,7 @@ cost [ADR-002](ADR-002-frontend-and-backend-boundaries.md) and
 ## Decision
 
 Use **TypeScript** for Phase 2A ingestion: source adapters, normalization, sanitization, hashing,
-upsert orchestration, and the deterministic market-relevance scoring introduced in Phase 2A.3. This
+upsert orchestration, and the deterministic market-relevance scoring introduced in Phase 2A.2. This
 code lives in `ingestion/` as a second, independent Node project (its own `package.json` and
 lockfile), run today as a local CLI (see [ADR-017](ADR-017-local-first-ingestion-execution.md)).
 

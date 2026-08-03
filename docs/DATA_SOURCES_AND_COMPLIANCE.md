@@ -223,7 +223,7 @@ Munich/Berlin deep-tech, with very few student-level titles. A Greenhouse-only a
 automated discovery but **not** meaningful Bremen/Hamburg student-role coverage on its own — that
 gap is filled by manual import (Workflow 9,
 [USER_WORKFLOWS.md](USER_WORKFLOWS.md#workflow-9--manually-adding-an-opportunity-phase-2a-see-adr-018)),
-which is why both ship together at Phase 2A.1/2A.2 rather than the adapter alone.
+which is why both ship together at Phase 2A.1 rather than the adapter alone.
 
 ## 4. Rate-limiting and politeness (applies to every adapter)
 
@@ -258,4 +258,4 @@ employer is manual-import-only pending its own custom-site terms review if one i
 
 | Source | Category | Legal basis confirmed | Rate limit | Status |
 |---|---|---|---|---|
-| *(none configured yet — this table is populated at Phase 2A.2 implementation time, one row per registered `sources` entry, `enabled = false` until manually verified)* | | | | |
+| *(none configured yet — this table is populated at Phase 2A.1 implementation time, one row per registered `sources` entry, `enabled = false` until manually verified)* | | | | |

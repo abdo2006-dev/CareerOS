@@ -68,7 +68,7 @@ phase that needs it.
     Workable publishes a filtered endpoint or a later hosted worker can affordably stream the full
     feed.
 - **Which specific reviewed Greenhouse employer boards enter the first source configuration** —
-  a shortlist, not a compliance question; decide at Phase 2A.2 implementation time.
+  a shortlist, not a compliance question; decide at Phase 2A.1 implementation time.
 - **Raw-payload retention period and snapshot-retention limits**: this pass reaffirms the existing
   policy (sanitized snapshots only, no indefinite raw retention — see
   [ARCHITECTURE.md](ARCHITECTURE.md#raw-external-content-retention-policy)) but does not set a

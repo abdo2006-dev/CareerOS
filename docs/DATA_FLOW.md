@@ -135,7 +135,7 @@ flowchart LR
     A["User views opportunity + fit explanation\n(scoped to current_version_id)"] --> B["User clicks Save"]
     B --> C["saved_opportunities row created,\npinning opportunity_id AND\nsaved_opportunity_version_id"]
     C --> D{"User moves to\napplication pipeline?"}
-    D -- yes --> E["applications row created\n(status = identified)"]
+    D -- yes --> E["applications row created\n(status = preparing,\nsaved_opportunity_id set)"]
     E --> F["User adds/accepts suggested tasks"]
     F --> G["tasks rows created,\nlinked to application"]
     D -- not yet --> H["Stays saved only"]
@@ -146,6 +146,14 @@ Because `saved_opportunity_version_id` is pinned at save time, and because
 as they saw it — including which `source_listing_id` (and therefore which source) it came from —
 even if the canonical opportunity later gains new versions, gets merged with another duplicate, or
 its current-version pointer moves on.
+
+A manually entered `private_opportunities` row (see
+[USER_WORKFLOWS.md](USER_WORKFLOWS.md#workflow-9--manually-adding-an-opportunity-phase-2a-see-adr-018))
+follows the same "moves to application pipeline" step, but there is no separate save step first —
+the private row is already the user's own saved record — and the `applications` row it creates sets
+`private_opportunity_id` plus `private_opportunity_snapshot_jsonb` instead of `saved_opportunity_id`
+(see [DATA_MODEL.md](DATA_MODEL.md#user-activity-domain-user-owned-rls-protected)). Exactly one of
+`saved_opportunity_id` / `private_opportunity_id` is set on any given `applications` row.
 
 ## 4. Market intelligence aggregation
 

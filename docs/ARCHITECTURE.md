@@ -6,6 +6,10 @@ explains the *why*, not just the *what* — read it alongside [docs/adr/](adr/RE
 
 ## 1. Guiding constraints
 
+- Personal-first engineering priority: until the owner validates real-world usefulness, prioritize
+  working product features over preparation for hypothetical future users — see
+  [MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority) for the exact policy
+  and the safeguards that remain required regardless of product stage.
 - Single user today, must not require a rewrite to support more (see
   [ADR-008](adr/ADR-008-private-first-multi-user-later.md)).
 - $0 recurring cost by default (see [ADR-009](adr/ADR-009-zero-cost-mvp-deployment.md) and
@@ -233,13 +237,13 @@ careeros/
   app/            React + TypeScript + Vite frontend (implemented, Phase 0)
   ingestion/      TypeScript: source adapters, normalization, deterministic scoring
                   (placeholder only as of Phase 2A.0 -- no code yet, see ingestion/README.md
-                  and ADR-016; implemented starting Phase 2A.1/2A.2. Resume parsing is a
+                  and ADR-016; implemented starting Phase 2A.1. Resume parsing is a
                   separate, undecided Phase 1B question -- not assumed to live here.)
   supabase/       config.toml, migrations/, tests/database/ (pgTAP), scripts/ (local-only
                   dev tooling) -- implemented, Phase 0
   docs/           this documentation set
   .github/workflows/   ci.yml (Phase 0; gains an `ingestion` lint/typecheck/test job in
-                       Phase 2A.2). No ingestion/scoring *schedule* is planned in GitHub
+                       Phase 2A.1). No ingestion/scoring *schedule* is planned in GitHub
                        Actions -- ingestion runs as a local CLI (see ADR-017); scheduled
                        hosted execution, if ever adopted, targets Supabase Edge Functions or
                        Cloudflare Workers, not GitHub Actions cron.

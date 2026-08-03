@@ -99,7 +99,7 @@ cd ingestion && node --env-file=.env.local dist/cli.js score --all
   particular run frequency.
 - `.github/workflows/ci.yml` remains the only GitHub Actions workflow in this repository, and it
   never performs ingestion or holds the service-role key — it runs `frontend`/`database` jobs (and,
-  from Phase 2A.2, a third `ingestion` job: install, lint, typecheck, test, no live network call).
+  from Phase 2A.1, a third `ingestion` job: install, lint, typecheck, test, no live network call).
 
 **Later, explicitly-triggered migration path** (not provisioned now — see
 [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) for the full trigger conditions): a hosted

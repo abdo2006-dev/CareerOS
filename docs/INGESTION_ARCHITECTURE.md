@@ -5,14 +5,15 @@ follow, per [ADR-004](adr/ADR-004-source-adapter-architecture.md) (adapter inter
 [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (TypeScript runtime),
 [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-first execution), and
 [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) (identity/dedup). No
-code exists yet — this document governs Phase 2A.2's implementation, not a description of
+code exists yet — this document governs Phase 2A.1's implementation, not a description of
 something already built.
 
 ## 1. What exists today
 
 Nothing. `ingestion/` contains only a placeholder `README.md`. This document, together with the
 ADRs above and [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md), is the design that
-Phase 2A.1 (schema) and Phase 2A.2 (the first adapter and CLI) implement against.
+Phase 2A.1 (schema, first adapter, and local CLI, shipped together — see
+[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)) implements against.
 
 ## 2. Repository shape
 
@@ -121,7 +122,7 @@ No fuzzy/similarity-based automatic merging is implemented at any point in Phase
 silently combines two postings' histories, which is worse than a visible, manually-resolvable
 duplicate (see [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) for the
 full reasoning). The review-queue UI for confirming/rejecting a `pending_review` pair is deferred
-past Phase 2A.2 — per [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md), a second adapter that could
+past Phase 2A.1 — per [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md), a second adapter that could
 plausibly cover an already-covered employer is not enabled until that queue exists and works.
 
 **URL normalization**: lowercase scheme+host, strip default port/fragment/userinfo, collapse

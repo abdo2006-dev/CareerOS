@@ -255,9 +255,9 @@ distinct, timestamped event, not a mutation of the number the user already saw.
 | Table | Key fields | Notes |
 |---|---|---|
 | `saved_opportunities` | `id`, `user_id`, `opportunity_id`, `saved_opportunity_version_id`, `notes`, `saved_at` | Snapshot pinning: even if the opportunity gets new versions later, this remembers which version — and, transitively via that version's `source_listing_id`, which source content — the user actually saved and reacted to |
-| `applications` | `id`, `user_id`, `saved_opportunity_id`, `status` (`identified`\|`preparing`\|`applied`\|`interview_scheduled`\|`interview_complete`\|`offer`\|`rejected`\|`withdrawn`), `applied_at`, `resume_id_used` | |
+| `applications` | `id`, `user_id`, `saved_opportunity_id` (nullable FK to `saved_opportunities`, set for a shared/ingested opportunity), `private_opportunity_id` (nullable FK to `private_opportunities`, set for a manually entered one — exactly one of the two is set), `private_opportunity_snapshot_jsonb` (populated only when `private_opportunity_id` is set — see note below), `status` (`preparing`\|`applied`\|`awaiting_response`\|`interview_scheduled`\|`interview_complete`\|`offer`\|`accepted`\|`rejected`\|`withdrawn`\|`closed`), `applied_at`, `status_updated_at`, `next_action` (nullable), `next_action_due_at` (nullable), `notes`, `contact_note` (nullable), `resume_id_used` | Current status plus timestamps only — no event-sourced status-history table at MVP (see [MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority)); "saved" is a state prior to and outside this enum, held on `saved_opportunities`/`private_opportunities` |
 | `tasks` | `id`, `user_id`, `application_id` (nullable), `opportunity_id` (nullable), `title`, `due_date`, `status` (`open`\|`done`), `origin` (`manual`\|`suggested`) | Deadline-derived tasks reference the opportunity directly even before an application exists |
-| `interview_prep_notes` | `id`, `application_id`, `content`, `created_at` | |
+| `interview_prep_notes` | `id`, `application_id`, `content`, `created_at` | Free-text notes tied to the application — likely questions, topics to revise, recruiter notes, post-interview reflections all fit in `content`; no structured sub-fields at MVP |
 | `private_opportunities` | `id`, `user_id`, `source_url`, `title`, `organization_name`, `location_text`, `opportunity_kind`, `employment_type`, `remote_mode`, `description_text`, `posted_at`, `application_deadline`, `application_url`, `dismissed_at`, `promoted_to_opportunity_id` (nullable, trusted-write only), `created_at`, `updated_at`, `last_confirmed_at` | **New (Phase 2A, see [ADR-018](adr/ADR-018-private-manual-opportunities.md))**: manually entered opportunities, structurally and permission-wise separate from the shared identity domain above — not written through the ingestion/dedup pipeline, not versioned like `opportunity_versions` (ordinary mutable CRUD, like `work_experience`), private by default. `promoted_to_opportunity_id` is a future, trusted-only, additive link to a canonical shared opportunity if one is later discovered by an adapter; no promotion logic exists yet. Exact column types/constraints are finalized at Phase 2A.1 implementation time |
 
 ## Raw external-content retention (debug-only, not a core table)
@@ -280,6 +280,17 @@ entirely to `opportunity_versions`).
   latest": a user's saved reasoning and fit explanation refer to the posting as it existed when
   they looked at it. If requirements change later, the user should see that explicitly as a diff,
   not have their prior judgment silently reinterpreted against new text.
+- **Why `applications` carries its own `private_opportunity_snapshot_jsonb`** rather than reading
+  `private_opportunities` live: a shared opportunity already gets this guarantee for free through
+  `saved_opportunities.saved_opportunity_version_id` pointing at an immutable
+  `opportunity_versions` row. `private_opportunities` has no such immutable version history — it is
+  ordinary mutable CRUD, like `work_experience` — so without its own snapshot, editing a private
+  entry after applying (fixing a typo, updating a copied deadline) would silently rewrite the exact
+  listing content the application and interview-prep notes refer to. The snapshot is captured once,
+  at `applications` creation time, from `private_opportunities`' fields as they stood at that
+  moment, and is never updated afterward — this is the smallest relationship that gives both the
+  shared and private paths the same "what I applied to is preserved" guarantee without introducing
+  version history for `private_opportunities` itself.
 - **Why `evidence_jsonb` exists on every score table**: this is the mechanism that satisfies the
   hard explainability requirement in [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md) — every
   sub-score must be traceable to the specific profile fields and posting requirement lines that
