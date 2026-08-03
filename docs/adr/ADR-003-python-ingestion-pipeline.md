@@ -1,6 +1,10 @@
 # ADR-003: Python Ingestion Pipeline
 
-**Status**: Proposed
+**Status**: Superseded by [ADR-016](ADR-016-typescript-ingestion-runtime.md) for
+ingestion/normalization and deterministic opportunity scoring — see that ADR for the exact scope of
+the supersession. This ADR's original rationale is left unchanged below as historical context: it
+correctly anticipated needs (resume parsing, market-skill aggregation) ADR-016 does not touch, and
+those remain open, undecided questions for their own future phases, not settled by either ADR.
 
 ## Context
 

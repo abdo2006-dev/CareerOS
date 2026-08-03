@@ -46,6 +46,12 @@ choice already made for ingestion.
 - **Node.js backend**: no reason to introduce a second server-side language when Python already
   covers ingestion/scoring and no Node-specific capability is needed.
 
+  **Note (Phase 2A.0)**: [ADR-016](ADR-016-typescript-ingestion-runtime.md) has since chosen
+  TypeScript for opportunity ingestion/scoring specifically, narrowing the premise of this
+  alternative (Python no longer "already covers ingestion"). This ADR's own Decision — no
+  synchronous backend server at MVP — is unaffected and remains Accepted; only the batch-ingestion
+  language has changed, and only for the scope ADR-016 states.
+
 ## Consequences
 
 - The frontend's authorization model is entirely dependent on RLS being correct — there is no

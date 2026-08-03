@@ -35,6 +35,18 @@ This revision corrects two gaps identified in review:
    suggestion structures. `profiles.profile_complete` has no authoritative role; completeness is
    derived from [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md).
 
+## Revision note (Phase 2A.0 architecture pass)
+
+Manually entered opportunities are **not** part of the shared opportunity-identity domain below.
+[ADR-018](adr/ADR-018-private-manual-opportunities.md) adds `private_opportunities` (see the User
+activity domain table) as a structurally separate, user-owned table — private by default, ordinary
+mutable CRUD rather than versioned, and outside [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md)'s
+deduplication scope. This is a documentation-and-decision update only; no migration exists yet
+(that is Phase 2A.1). [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) and
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) additionally settle the ingestion runtime
+language and execution model referenced throughout [ARCHITECTURE.md](ARCHITECTURE.md) and
+[DATA_FLOW.md](DATA_FLOW.md); neither changes this document's schema.
+
 ## Entity-relationship overview
 
 ```mermaid
@@ -73,6 +85,9 @@ erDiagram
     OPPORTUNITY_VERSIONS ||--o{ SAVED_OPPORTUNITIES : snapshot_of
     USERS ||--o{ APPLICATIONS : tracks
     SAVED_OPPORTUNITIES ||--o| APPLICATIONS : becomes
+
+    USERS ||--o{ PRIVATE_OPPORTUNITIES : enters
+    PRIVATE_OPPORTUNITIES ||--o| OPPORTUNITIES : promoted_to
     APPLICATIONS ||--o{ TASKS : generates
     APPLICATIONS ||--o{ INTERVIEW_PREP_NOTES : has
 
@@ -243,6 +258,7 @@ distinct, timestamped event, not a mutation of the number the user already saw.
 | `applications` | `id`, `user_id`, `saved_opportunity_id`, `status` (`identified`\|`preparing`\|`applied`\|`interview_scheduled`\|`interview_complete`\|`offer`\|`rejected`\|`withdrawn`), `applied_at`, `resume_id_used` | |
 | `tasks` | `id`, `user_id`, `application_id` (nullable), `opportunity_id` (nullable), `title`, `due_date`, `status` (`open`\|`done`), `origin` (`manual`\|`suggested`) | Deadline-derived tasks reference the opportunity directly even before an application exists |
 | `interview_prep_notes` | `id`, `application_id`, `content`, `created_at` | |
+| `private_opportunities` | `id`, `user_id`, `source_url`, `title`, `organization_name`, `location_text`, `opportunity_kind`, `employment_type`, `remote_mode`, `description_text`, `posted_at`, `application_deadline`, `application_url`, `dismissed_at`, `promoted_to_opportunity_id` (nullable, trusted-write only), `created_at`, `updated_at`, `last_confirmed_at` | **New (Phase 2A, see [ADR-018](adr/ADR-018-private-manual-opportunities.md))**: manually entered opportunities, structurally and permission-wise separate from the shared identity domain above — not written through the ingestion/dedup pipeline, not versioned like `opportunity_versions` (ordinary mutable CRUD, like `work_experience`), private by default. `promoted_to_opportunity_id` is a future, trusted-only, additive link to a canonical shared opportunity if one is later discovered by an adapter; no promotion logic exists yet. Exact column types/constraints are finalized at Phase 2A.1 implementation time |
 
 ## Raw external-content retention (debug-only, not a core table)
 

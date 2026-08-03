@@ -74,3 +74,10 @@ which source actually supplied this content — is part of the historical record
 - Per [AGENTS.md](../../AGENTS.md), coding agents must never introduce a code path that mutates an
   existing `opportunity_versions` row, mutates an existing score row, or deletes either; corrections
   take the form of a new version and, where scoring is affected, a new score row.
+
+**Note (Phase 2A.0)**: [ADR-018](ADR-018-private-manual-opportunities.md) introduces
+`private_opportunities`, a user-owned table for manually entered opportunities, which is
+intentionally **outside** this ADR's immutability model — it is ordinary mutable CRUD, like
+`work_experience`, because it holds the user's own, continuously-editable content rather than
+at-risk third-party content. This ADR's guarantees are unchanged and continue to apply in full to
+`opportunities`/`opportunity_versions`.

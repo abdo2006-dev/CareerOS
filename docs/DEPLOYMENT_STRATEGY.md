@@ -76,38 +76,60 @@ onboarded before a broader public launch.
 - RLS policies are part of the migration files, not a separately-managed dashboard setting, for
   the same reproducibility reason.
 
-## 4. Scheduled compute deployment
+## 4. Ingestion/scoring compute deployment
 
-- GitHub Actions workflows in `.github/workflows/` define the ingestion, resume-parsing, and
-  scoring jobs on cron schedules (see cadences in
-  [DATA_FLOW.md](DATA_FLOW.md#5-data-freshness-expectations-proposal)). **GitHub Actions cron is a
-  best-effort scheduler, not a reliable interactive execution system** — see
-  [ARCHITECTURE.md](ARCHITECTURE.md#7-github-actions-reliability-characteristics-read-before-relying-on-cadence)
+**Status (Phase 2A.0)**: this section previously assumed GitHub Actions cron would run scheduled
+Python ingestion/parsing/scoring jobs. [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md)
+(TypeScript) and [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-first execution)
+supersede that assumption for ingestion and scoring. **No GitHub Actions workflow runs ingestion or
+scoring**, today or in the currently planned near-term design.
+
+**Current design (Phase 2A)**: ingestion and scoring run as an explicit local CLI, invoked by the
+repository owner on demand against the local (or, once one exists, a real hosted) Supabase stack:
+
+```
+cd ingestion && node --env-file=.env.local dist/cli.js ingest --source greenhouse:<token> [--dry-run]
+cd ingestion && node --env-file=.env.local dist/cli.js score --all
+```
+
+- The service-role key lives in a gitignored `ingestion/.env.local`, never a GitHub Actions
+  repository secret, never committed, and never held by any hosted compute at this stage.
+- Every run must still be idempotent and safely re-runnable, since the owner may re-run after a
+  failure or simply run more or less often than any target cadence — nothing here assumes any
+  particular run frequency.
+- `.github/workflows/ci.yml` remains the only GitHub Actions workflow in this repository, and it
+  never performs ingestion or holds the service-role key — it runs `frontend`/`database` jobs (and,
+  from Phase 2A.2, a third `ingestion` job: install, lint, typecheck, test, no live network call).
+
+**Later, explicitly-triggered migration path** (not provisioned now — see
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) for the full trigger conditions): a hosted
+Supabase Edge Function on a schedule, then a Cloudflare Worker + Cron Trigger if Edge Function
+limits are hit, with GitHub Actions considered only as a last resort and only with a dedicated
+least-privilege database role — never the full service-role key. If and when a scheduled stage is
+adopted, the historical cron-hygiene guidance below becomes relevant again:
+
+- **GitHub Actions cron is a best-effort scheduler, not a reliable interactive execution system** —
+  see [ARCHITECTURE.md](ARCHITECTURE.md#7-github-actions-reliability-characteristics-read-before-relying-on-cadence)
   for the full set of consequences this has for job design.
 - **Cron expressions must avoid the top of the hour** (e.g., `7,22,37,52 * * * *`, not `0,15,30,45
   * * * *`), since GitHub documents that `:00`-aligned schedules see the most congestion-related
   delay.
-- Each workflow installs Python dependencies (pinned via a lockfile), runs the relevant module,
-  and exits — no persistent process. Every workflow must be idempotent and safely re-runnable,
-  since a late or dropped scheduled run may need to be caught up by the next run or a manual one
-  without duplicating data.
-- Secrets (Supabase service-role key, any source API keys) are GitHub Actions repository secrets,
-  injected as environment variables only inside the job run.
-- A manual `workflow_dispatch` trigger should exist alongside the cron schedule for every job, so
-  ingestion or scoring can be re-run on demand while debugging. **This is a developer control,
-  invoked with repository write access via the GitHub UI or `gh` CLI — it is not, and must never
-  become, a button exposed in the frontend that the browser triggers using a stored GitHub token.**
-  Embedding any token with workflow-trigger permission in browser-reachable code is a secret-
-  exposure risk this project does not accept. A genuine user-facing "process this now" action
-  belongs to the synchronous Edge Function/worker layer reserved in
-  [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md), introduced only once actually needed
-  — not to GitHub Actions.
+- A manual `workflow_dispatch` trigger should exist alongside any future cron schedule, so a run can
+  be re-triggered on demand while debugging. **This is a developer control, invoked with repository
+  write access via the GitHub UI or `gh` CLI — it is not, and must never become, a button exposed in
+  the frontend that the browser triggers using a stored GitHub token.** Embedding any token with
+  workflow-trigger permission in browser-reachable code is a secret-exposure risk this project does
+  not accept. A genuine user-facing "process this now" action belongs to the synchronous Edge
+  Function/worker layer reserved in [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md),
+  introduced only once actually needed — not to GitHub Actions.
 - **The repository is public**, so standard GitHub-hosted runner minutes for public repositories
   are free (no monthly minute quota to track, unlike a private repository on the free plan) — see
-  [COST_MODEL.md](COST_MODEL.md). Larger/specialized runners and some storage or advanced features
-  can still be billable even on a public repository; the ingestion cadence should still be
-  reviewed against actual usage once Phase 2's scheduled jobs exist, but not because of a private-
-  repo minute quota.
+  [COST_MODEL.md](COST_MODEL.md). This currently applies only to CI (`ci.yml`), since ingestion runs
+  locally, not on any GitHub-hosted runner.
+
+**Resume parsing** (Phase 1B, deferred) is unaffected by ADR-016/ADR-017: its language and execution
+model remain a separate, undecided question for that phase's own design pass (see
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)).
 
 ## 5. Release process (proposal)
 

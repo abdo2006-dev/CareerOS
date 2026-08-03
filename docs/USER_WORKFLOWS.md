@@ -31,8 +31,9 @@ when built, they follow ADR-014's explicit accept/correct/reject model.
 
 ## Workflow 2 — Discovering and understanding the market
 
-1. Scheduled ingestion (see [DATA_FLOW.md](DATA_FLOW.md)) has already pulled and normalized new
-   postings from configured sources since the last run.
+1. Ingestion (see [DATA_FLOW.md](DATA_FLOW.md); currently a local CLI the owner runs on demand,
+   not a schedule — see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) has already
+   pulled and normalized new postings from configured sources since the last run.
 2. User opens the **Market Relevance** view: opportunities ranked for "is this relevant to an ECE
    student in Germany," independent of the user's own competitiveness. This view is useful even
    before the profile is complete.
@@ -95,9 +96,10 @@ when built, they follow ADR-014's explicit accept/correct/reject model.
 
 ## Workflow 7 — Preventing loss on deadline-sensitive postings
 
-1. A scheduled ingestion run notices a previously-active source listing is no longer reachable at
-   its source URL (404, removed from listing page, or explicit "closed" marker where the source
-   provides one).
+1. An ingestion run (currently owner-invoked via the local CLI, see
+   [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) notices a previously-active source
+   listing is no longer reachable at its source URL (404, removed from listing page, or explicit
+   "closed" marker where the source provides one).
 2. That `source_listing` is marked `removed`. The canonical opportunity itself is only marked
    `removed` once every source listing feeding it is removed — a posting still live on a
    company's own career page is not marked removed just because one ATS mirror of it disappeared.
@@ -117,3 +119,23 @@ when built, they follow ADR-014's explicit accept/correct/reject model.
    its own opportunity row is marked `merged_duplicate`) or rejects ("no, these are genuinely
    different" — both remain independent opportunities and the pair is not re-flagged). Nothing is
    merged without this explicit step.
+
+## Workflow 9 — Manually adding an opportunity (Phase 2A; see [ADR-018](adr/ADR-018-private-manual-opportunities.md))
+
+1. The user pastes a URL for a posting no configured adapter reaches (a Fraunhofer institute role,
+   a Bremen/Hamburg university position, a scholarship). CareerOS does not automatically fetch the
+   URL — see [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §7.
+2. If the URL matches a configured, allowlisted adapter's own pattern, the UI says so and points the
+   user at running the local ingestion CLI for that source instead of manual entry; otherwise the
+   user fills a short form themselves: title, organization, location, type, dates, and a pasted
+   description/excerpt.
+3. The entry is saved as the user's own **private** record
+   ([ADR-018](adr/ADR-018-private-manual-opportunities.md)) — visible only to them, never a shared
+   record another (future) user could see, and never written through the trusted ingestion/dedup
+   pipeline. The original pasted URL is always preserved as provenance, and the detail view labels
+   it plainly ("Added by you") rather than implying CareerOS verified it against the source.
+4. The user can search, filter, save/dismiss, and later edit this entry exactly like a
+   discovered opportunity, kept separate in the data model but combined in the browsing experience.
+5. If a later adapter independently discovers the same real-world posting, a future, explicitly
+   separate "promotion" mechanism ([ADR-018](adr/ADR-018-private-manual-opportunities.md)) may link
+   the two — not built in Phase 2A, and never a silent overwrite of the user's own entered content.

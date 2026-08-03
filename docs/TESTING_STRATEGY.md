@@ -120,7 +120,14 @@ their visible status always comes from the returned revision/review state.
   [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md). Fixtures must be synthetic and
   public-safe; Phase 0 regressions remain required.
 
-## 4. Adapter and scheduled-job testing
+## 4. Adapter and local-ingestion-job testing
+
+**Status (Phase 2A.0)**: adapters are TypeScript, run today as an explicit local CLI, not a
+scheduled job — see [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) and
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md). CI gains a third job (`ingestion`:
+install, format check, lint, typecheck, test) alongside the existing `frontend` and `database`
+jobs, starting at Phase 2A.2; it never makes a live third-party network call. The testing
+principles below are otherwise unchanged and would apply identically to a future scheduled stage.
 
 - Each adapter is tested against **recorded fixture responses** (a saved real response, or a
   realistic synthetic one, checked into the test suite — see §6 for what those fixtures may and

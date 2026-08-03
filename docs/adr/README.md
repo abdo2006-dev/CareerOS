@@ -12,7 +12,7 @@ that explicitly supersedes it. Do not silently drift away from what's recorded h
 |---|---|---|
 | [ADR-001](ADR-001-database-selection.md) | PostgreSQL (via Supabase) as the primary data store | **Accepted** |
 | [ADR-002](ADR-002-frontend-and-backend-boundaries.md) | No synchronous backend at MVP; direct frontend-to-Supabase access plus batch Python | **Accepted** |
-| [ADR-003](ADR-003-python-ingestion-pipeline.md) | Python for ingestion, parsing, and scoring | Proposed |
+| [ADR-003](ADR-003-python-ingestion-pipeline.md) | Python for ingestion, parsing, and scoring | Superseded by [ADR-016](ADR-016-typescript-ingestion-runtime.md) (ingestion/scoring scope only) |
 | [ADR-004](ADR-004-source-adapter-architecture.md) | Source-adapter architecture with a common opportunity interface | Proposed |
 | [ADR-005](ADR-005-explainable-ranking-before-llm-ranking.md) | Deterministic, explainable ranking before any LLM-based ranking | Proposed |
 | [ADR-006](ADR-006-posting-version-history.md) | Immutable posting version history, never overwrite in place | Proposed |
@@ -25,6 +25,9 @@ that explicitly supersedes it. Do not silently drift away from what's recorded h
 | [ADR-013](ADR-013-deterministic-profile-completeness.md) | Deterministic, named profile-completeness checks | Proposed |
 | [ADR-014](ADR-014-confirmed-profile-versus-imported-suggestions.md) | Confirmed profile records remain authoritative over imported suggestions | Proposed |
 | [ADR-015](ADR-015-minimized-work-eligibility-representation.md) | Minimal structured work-eligibility representation | Proposed |
+| [ADR-016](ADR-016-typescript-ingestion-runtime.md) | TypeScript for opportunity ingestion and deterministic scoring (supersedes ADR-003 for that scope) | Proposed |
+| [ADR-017](ADR-017-local-first-ingestion-execution.md) | Local CLI ingestion execution first; scheduled hosted execution is a later, explicitly evaluated stage | Proposed |
+| [ADR-018](ADR-018-private-manual-opportunities.md) | Manually entered opportunities are private, user-owned rows, structurally separate from shared opportunities | Proposed |
 
 "Proposed" means the decision is this planning phase's recommendation, presented for the project
 owner's review — not yet exercised in a real implementation. Once implemented and validated,

@@ -44,7 +44,9 @@ for how this maps to phases.
 - Multi-agent AI architecture.
 - Kubernetes.
 - Premature microservices — everything starts as one deployable frontend, one Postgres instance,
-  and one Python job runner.
+  and one TypeScript job runner for ingestion/scoring (see
+  [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md); this note previously said "Python job
+  runner" before that ADR).
 - Machine-learning acceptance predictions without real, sufficient outcome data.
 - Unauthorized browser automation (headless browsing of sites that forbid it).
 - A dedicated vector database — pgvector inside the existing Postgres instance is the ceiling for
