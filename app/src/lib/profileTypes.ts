@@ -1,6 +1,16 @@
 export type EducationStatus =
   'current' | 'completed' | 'paused' | 'withdrawn' | 'unknown'
 
+export type ExperienceKind =
+  | 'employment'
+  | 'internship'
+  | 'research'
+  | 'volunteering'
+  | 'student_leadership'
+  | 'other'
+
+export type SectionKey = 'basic_profile' | 'education' | 'experience'
+
 export interface ProfileRow {
   user_id: string
   preferred_name: string | null
@@ -23,8 +33,23 @@ export interface EducationEntry {
   end_date: string | null
 }
 
+export interface WorkExperience {
+  id: string
+  user_id: string
+  experience_kind: ExperienceKind
+  organization: string
+  role: string
+  location: string | null
+  start_year: number
+  start_month: number | null
+  end_year: number | null
+  end_month: number | null
+  is_current: boolean
+  description: string | null
+}
+
 export interface SectionState {
-  section_key: 'basic_profile' | 'education'
+  section_key: SectionKey
   content_revision: number
   reviewed_content_revision: number | null
 }

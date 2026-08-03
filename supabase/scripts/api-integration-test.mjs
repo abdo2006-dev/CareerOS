@@ -98,7 +98,7 @@ async function verifyUserFullyRemoved(id) {
   if (profileRows.length !== 0) {
     problems.push(`profile row for ${id} still present after user deletion (expected cascade delete)`);
   }
-  for (const table of ['education_entries', 'profile_section_revisions', 'profile_section_reviews']) {
+  for (const table of ['education_entries', 'work_experience', 'profile_section_revisions', 'profile_section_reviews']) {
     const rows = await adminGetRows(table, id);
     if (rows.length !== 0) problems.push(`${table} rows for ${id} still present after user deletion (expected cascade delete)`);
   }
@@ -202,6 +202,125 @@ async function main() {
     });
     check('user A cannot delete their own root profile through the browser role', !deleteOwnProfile.ok && deleteOwnProfile.status === 403);
 
+    // ---- experience CRUD, validation, and review freshness -----------------
+    const reviewEmptyExperience = await rest(tokenA, '/rpc/review_profile_section', {
+      method: 'POST', body: { requested_section_key: 'experience' },
+    });
+    const emptyExperienceState = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    const emptyExperienceReview = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=reviewed_content_revision');
+    check('user A can review an intentionally empty experience section', reviewEmptyExperience.ok && emptyExperienceState.ok && emptyExperienceReview.ok && emptyExperienceState.data[0].content_revision === 0 && emptyExperienceReview.data[0].reviewed_content_revision === 0);
+
+    const createExperienceA = await rest(tokenA, '/work_experience', {
+      method: 'POST',
+      body: {
+        user_id: userA.id,
+        experience_kind: 'research',
+        organization: 'Synthetic Integration Lab',
+        role: 'Research Assistant',
+        start_year: 2025,
+        start_month: 10,
+        is_current: true,
+        description: 'Synthetic public-safe experience fixture.',
+      },
+      prefer: 'return=representation',
+    });
+    const experienceA = createExperienceA.data?.[0];
+    check('user A can create experience through the REST API', createExperienceA.ok && experienceA?.experience_kind === 'research' && experienceA?.start_month === 10);
+
+    const experienceReviewAfterCreate = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=reviewed_content_revision');
+    const experienceRevisionAfterCreate = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    check('experience creation makes an empty-section review stale', experienceReviewAfterCreate.ok && experienceRevisionAfterCreate.ok && experienceReviewAfterCreate.data[0].reviewed_content_revision !== experienceRevisionAfterCreate.data[0].content_revision);
+
+    const invalidExperienceKind = await rest(tokenA, '/work_experience', {
+      method: 'POST',
+      body: { user_id: userA.id, experience_kind: 'invalid', organization: 'Synthetic', role: 'Role', start_year: 2025 },
+    });
+    check('invalid experience kind is rejected through the REST API', !invalidExperienceKind.ok && invalidExperienceKind.status >= 400);
+
+    const invalidExperienceDates = await rest(tokenA, '/work_experience', {
+      method: 'POST',
+      body: { user_id: userA.id, experience_kind: 'employment', organization: 'Synthetic', role: 'Role', start_year: 2025, start_month: 7, end_year: 2025, end_month: 6 },
+    });
+    check('invalid experience date ordering is rejected through the REST API', !invalidExperienceDates.ok && invalidExperienceDates.status >= 400);
+
+    const currentWithEndPeriod = await rest(tokenA, '/work_experience', {
+      method: 'POST',
+      body: { user_id: userA.id, experience_kind: 'employment', organization: 'Synthetic', role: 'Role', start_year: 2025, end_year: 2026, is_current: true },
+    });
+    check('current experience with an end period is rejected through the REST API', !currentWithEndPeriod.ok && currentWithEndPeriod.status >= 400);
+
+    const readExperienceA = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`);
+    check('user A can read their own experience through the REST API', readExperienceA.ok && readExperienceA.data.length === 1);
+
+    const updateExperienceA = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'PATCH', body: { location: 'Bremen' }, prefer: 'return=representation',
+    });
+    check('user A can update their own experience through the REST API', updateExperienceA.ok && updateExperienceA.data[0].location === 'Bremen');
+
+    const forgedExperienceProvenance = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'PATCH', body: { created_via: 'migration' }, prefer: 'return=representation',
+    });
+    const forgedExperienceTimestamp = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'PATCH', body: { updated_at: '2025-01-01T00:00:00Z' }, prefer: 'return=representation',
+    });
+    check('user A cannot forge experience provenance or timestamps', !forgedExperienceProvenance.ok && forgedExperienceProvenance.status === 403 && !forgedExperienceTimestamp.ok && forgedExperienceTimestamp.status === 403);
+
+    const reviewExperience = await rest(tokenA, '/rpc/review_profile_section', {
+      method: 'POST', body: { requested_section_key: 'experience' },
+    });
+    const experienceReviewCurrent = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=reviewed_content_revision');
+    const experienceRevisionCurrent = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    check('user A can renew their experience review at the current revision', reviewExperience.ok && experienceReviewCurrent.data[0].reviewed_content_revision === experienceRevisionCurrent.data[0].content_revision);
+
+    const revisionBeforeConcurrentExperienceUpdates = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    const concurrentExperienceUpdates = await Promise.all([
+      rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, { method: 'PATCH', body: { role: 'Research Engineering Assistant' }, prefer: 'return=representation' }),
+      rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, { method: 'PATCH', body: { description: 'Synthetic updated public-safe experience fixture.' }, prefer: 'return=representation' }),
+    ]);
+    const revisionAfterConcurrentExperienceUpdates = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    const experienceReviewAfterUpdate = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=reviewed_content_revision');
+    check('concurrent experience mutations advance revision monotonically without losing increments', concurrentExperienceUpdates.every((result) => result.ok) && revisionAfterConcurrentExperienceUpdates.data[0].content_revision >= revisionBeforeConcurrentExperienceUpdates.data[0].content_revision + 2);
+    check('later experience mutations make its review stale', experienceReviewAfterUpdate.ok && experienceReviewAfterUpdate.data[0].reviewed_content_revision !== revisionAfterConcurrentExperienceUpdates.data[0].content_revision);
+
+    const zeroRowExperienceUpdate = await rest(tokenA, '/work_experience?id=eq.00000000-0000-0000-0000-000000000000', {
+      method: 'PATCH', body: { role: 'Missing' }, prefer: 'return=representation',
+    });
+    check('a missing experience update returns zero rows', zeroRowExperienceUpdate.ok && zeroRowExperienceUpdate.data.length === 0);
+
+    const readExperienceAAsB = await rest(tokenB, `/work_experience?id=eq.${experienceA.id}`);
+    const updateExperienceAAsB = await rest(tokenB, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'PATCH', body: { role: 'Hacked' }, prefer: 'return=representation',
+    });
+    const deleteExperienceAAsB = await rest(tokenB, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'DELETE', prefer: 'return=representation',
+    });
+    check('user B cannot read, update, or delete user A\'s experience', readExperienceAAsB.ok && readExperienceAAsB.data.length === 0 && updateExperienceAAsB.ok && updateExperienceAAsB.data.length === 0 && deleteExperienceAAsB.ok && deleteExperienceAAsB.data.length === 0);
+
+    const forgedExperienceInsert = await rest(tokenA, '/work_experience', {
+      method: 'POST', body: { user_id: userB.id, experience_kind: 'internship', organization: 'Forged', role: 'Forged', start_year: 2025 },
+    });
+    const experienceOwnerRewrite = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'PATCH', body: { user_id: userB.id }, prefer: 'return=representation',
+    });
+    check('user A cannot forge or rewrite experience ownership', !forgedExperienceInsert.ok && forgedExperienceInsert.status === 403 && !experienceOwnerRewrite.ok && experienceOwnerRewrite.status === 403);
+
+    const reviewExperienceB = await rest(tokenB, '/rpc/review_profile_section', {
+      method: 'POST', body: { requested_section_key: 'experience' },
+    });
+    const experienceReviewAAfterB = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=user_id,reviewed_content_revision');
+    check('user B\'s experience review changes only user B\'s state', reviewExperienceB.ok && experienceReviewAAfterB.ok && experienceReviewAAfterB.data.length === 1 && experienceReviewAAfterB.data[0].user_id === userA.id);
+
+    const deleteExperienceA = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'DELETE', prefer: 'return=representation',
+    });
+    const experienceReviewAfterDelete = await rest(tokenA, '/profile_section_reviews?section_key=eq.experience&select=reviewed_content_revision');
+    const experienceRevisionAfterDelete = await rest(tokenA, '/profile_section_revisions?section_key=eq.experience&select=content_revision');
+    const zeroRowExperienceDelete = await rest(tokenA, `/work_experience?id=eq.${experienceA.id}`, {
+      method: 'DELETE', prefer: 'return=representation',
+    });
+    check('owner can delete experience and the prior review remains stale', deleteExperienceA.ok && deleteExperienceA.data.length === 1 && experienceReviewAfterDelete.data[0].reviewed_content_revision !== experienceRevisionAfterDelete.data[0].content_revision);
+    check('a deleted experience returns zero rows on a later delete', zeroRowExperienceDelete.ok && zeroRowExperienceDelete.data.length === 0);
+
     // ---- education CRUD, primary RPC, and review freshness -----------------
     const createEducationA = await rest(tokenA, '/education_entries', {
       method: 'POST',
@@ -230,14 +349,14 @@ async function main() {
     check('user A can select their current education through the primary RPC', selectPrimary.ok);
 
     const revisionsBeforeReview = await rest(tokenA, '/profile_section_revisions?select=section_key,content_revision');
-    check('user A can read their own section revisions', revisionsBeforeReview.ok && revisionsBeforeReview.data.length === 2);
+    check('user A can read their own section revisions', revisionsBeforeReview.ok && revisionsBeforeReview.data.length === 3);
     const reviewEducation = await rest(tokenA, '/rpc/review_profile_section', {
       method: 'POST', body: { requested_section_key: 'education' },
     });
     const reviewBasic = await rest(tokenA, '/rpc/review_profile_section', {
       method: 'POST', body: { requested_section_key: 'basic_profile' },
     });
-    check('user A can review both implemented sections through constrained RPCs', reviewEducation.ok && reviewBasic.ok);
+    check('user A can review the remaining implemented profile and education sections through constrained RPCs', reviewEducation.ok && reviewBasic.ok);
 
     const mutateProfileAfterReview = await rest(tokenA, `/profiles?user_id=eq.${userA.id}`, {
       method: 'PATCH', body: { headline: 'Changed after review' }, prefer: 'return=representation',
