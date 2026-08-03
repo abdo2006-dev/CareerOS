@@ -50,8 +50,9 @@ infer a status, or map the ambiguous degree-program text.
 **Exit condition**: Workflow 1 works through manual entry only, with independent section saves,
 actionable completeness, and verified cross-user isolation.
 
-Later Phase 1A PRs add experience/projects/links; then skills/evidence/languages; then
-preferences/targets/work eligibility; and finally the complete v2 evaluator. At every stage,
+The experience/research PR adds the `work_experience` vertical slice, including its review and
+partial-completeness state. Later Phase 1A PRs add projects/links; then skills/evidence/languages;
+then preferences/targets/work eligibility; and finally the complete v2 evaluator. At every stage,
 unimplemented checks are shown as product-unavailable rather than user omissions.
 
 ## Phase 1B — Resume intake and extraction drafts

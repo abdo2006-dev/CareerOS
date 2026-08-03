@@ -31,6 +31,7 @@ export function ProfileLayout() {
         </NavLink>
         <NavLink to="/profile/basic">Basic profile</NavLink>
         <NavLink to="/profile/education">Education</NavLink>
+        <NavLink to="/profile/experience">Experience</NavLink>
       </nav>
       <Outlet />
     </main>

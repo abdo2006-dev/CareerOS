@@ -10,6 +10,8 @@ import { ProfileLayout } from './pages/ProfileLayout'
 import { BasicProfilePage } from './pages/BasicProfilePage'
 import { EducationEditorPage } from './pages/EducationEditorPage'
 import { EducationListPage } from './pages/EducationListPage'
+import { ExperienceEditorPage } from './pages/ExperienceEditorPage'
+import { ExperienceListPage } from './pages/ExperienceListPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SignInPage } from './pages/SignInPage'
 
@@ -96,6 +98,12 @@ const router = createBrowserRouter([
           {
             path: 'education/:educationId/edit',
             element: <EducationEditorPage />,
+          },
+          { path: 'experience', element: <ExperienceListPage /> },
+          { path: 'experience/new', element: <ExperienceEditorPage /> },
+          {
+            path: 'experience/:experienceId/edit',
+            element: <ExperienceEditorPage />,
           },
         ],
       },

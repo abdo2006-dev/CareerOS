@@ -4,14 +4,14 @@ import { RouterProvider } from 'react-router/dom'
 import { describe, expect, it } from 'vitest'
 
 describe('router foundation', () => {
-  it('uses an in-memory router to honor a bookmarkable route', async () => {
+  it('uses an in-memory router to honor a bookmarkable nested route', async () => {
     const memoryRouter = createMemoryRouter(
-      [{ path: '/profile/education', element: <h1>Education</h1> }],
-      { initialEntries: ['/profile/education'] },
+      [{ path: '/profile/experience/new', element: <h1>Add experience</h1> }],
+      { initialEntries: ['/profile/experience/new'] },
     )
     render(<RouterProvider router={memoryRouter} />)
     expect(
-      await screen.findByRole('heading', { name: 'Education' }),
+      await screen.findByRole('heading', { name: 'Add experience' }),
     ).toBeInTheDocument()
   })
 })

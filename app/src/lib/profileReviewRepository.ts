@@ -1,9 +1,9 @@
 import { supabase } from './supabaseClient'
-import type { SectionState } from './profileTypes'
+import type { SectionKey, SectionState } from './profileTypes'
 
 export function reviewStatus(
   state: SectionState[] | null,
-  section: SectionState['section_key'],
+  section: SectionKey,
 ): 'current' | 'stale' | 'not_reviewed' {
   const item = state?.find((entry) => entry.section_key === section)
   if (!item || item.reviewed_content_revision === null) return 'not_reviewed'
@@ -28,7 +28,7 @@ export const profileReviewRepository = {
     if (reviews.error) return { data: null, error: reviews.error }
     return {
       data: (revisions.data ?? []).map((revision) => ({
-        section_key: revision.section_key as SectionState['section_key'],
+        section_key: revision.section_key as SectionKey,
         content_revision: revision.content_revision,
         reviewed_content_revision:
           reviews.data?.find(
@@ -38,7 +38,7 @@ export const profileReviewRepository = {
       error: null,
     }
   },
-  async review(sectionKey: SectionState['section_key']) {
+  async review(sectionKey: SectionKey) {
     return supabase.rpc('review_profile_section', {
       requested_section_key: sectionKey,
     })
