@@ -3,30 +3,46 @@
 Status: **proposal**, consistent with [ARCHITECTURE.md](ARCHITECTURE.md) and
 [DATA_MODEL.md](DATA_MODEL.md).
 
-## 0. A standing caveat: GitHub Actions is a scheduler, not a reliable interactive system
+## 0. Execution-model status (Phase 2A.0)
 
-Every flow below runs on GitHub Actions cron. Cron triggers are **best-effort and can start
-late** — GitHub documents that scheduled workflows may be delayed, especially at the top of the
-hour when load is highest, and can occasionally be dropped entirely during platform incidents.
-Every flow in this document is therefore designed to be **idempotent, safely retryable, and
-tolerant of a job simply not running exactly on schedule** — nothing here assumes cron fires at a
-precise time, and no user-facing feature should imply otherwise. See
+**Opportunity ingestion and scoring currently run as an explicit local CLI, invoked on demand by
+the repository owner — not on any GitHub Actions schedule.** See
+[ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (TypeScript) and
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-first execution), which supersede
+this document's earlier "every flow below runs on GitHub Actions cron" framing for the ingestion
+flow in §1. Under this model, freshness is exactly as current as the owner's last run — there is no
+cron schedule to be "best-effort" about, and the `stale` status in §1's flow reflects "not run
+recently by the owner," not a missed cron trigger.
+
+The cron-reliability cautions below remain relevant for two things: this repository's own CI
+(`.github/workflows/ci.yml`, which does run on every push/PR) and **any future scheduled workflow**
+this project might adopt at a later execution-model stage
+([ADR-017](adr/ADR-017-local-first-ingestion-execution.md)'s migration path) — they are not a
+description of how ingestion behaves today.
+
+**Historical framing, preserved for that future-scheduled case**: cron triggers are **best-effort
+and can start late** — GitHub documents that scheduled workflows may be delayed, especially at the
+top of the hour when load is highest, and can occasionally be dropped entirely during platform
+incidents. Any future scheduled flow in this document must remain **idempotent, safely retryable,
+and tolerant of a job simply not running exactly on schedule** — nothing here should assume cron
+fires at a precise time, and no user-facing feature should imply otherwise. See
 [ARCHITECTURE.md](ARCHITECTURE.md#7-github-actions-reliability-characteristics-read-before-relying-on-cadence)
-for the full set of reliability characteristics this constrains.
+for the full set of reliability characteristics this constrains, if and when a scheduled stage is
+adopted.
 
 ## 1. Opportunity ingestion, deduplication, and scoring flow
 
 ```mermaid
 sequenceDiagram
-    participant Cron as GitHub Actions (cron, best-effort timing)
-    participant Adapter as Source adapter (Python)
+    participant Owner as Repository owner (local CLI, on demand)
+    participant Adapter as Source adapter (TypeScript)
     participant Norm as Normalizer
     participant Dedup as Identity/dedup step
     participant DB as Postgres (Supabase)
-    participant Score as Scoring engine (Python)
+    participant Score as Scoring engine (TypeScript)
     participant SPA as React SPA
 
-    Cron->>Adapter: run scheduled ingestion job (may start later than scheduled)
+    Owner->>Adapter: run ingestion CLI (owner-invoked, no schedule)
     Adapter->>Adapter: fetch from source (compliant API/feed)
     Adapter->>Norm: raw source record
     Norm->>Norm: map to common opportunity schema,\nsanitize content, classify category/subtype
@@ -50,7 +66,7 @@ sequenceDiagram
         end
     end
     Note over DB: a source_listing no longer found in a fresh fetch\nis marked status = removed on the listing;\nthe canonical opportunity is marked removed only when\nevery linked listing is removed
-    Cron->>Score: run scoring job (after ingestion; also best-effort timing)
+    Owner->>Score: run scoring CLI (after ingestion, owner-invoked)
     Score->>DB: read opportunities whose current_version_id changed\nsince last scoring run, + current user profile
     Score->>Score: compute market-relevance score (Ranking 1)
     Score->>Score: compute personal-competitiveness score (Ranking 2)
@@ -119,7 +135,7 @@ flowchart LR
     A["User views opportunity + fit explanation\n(scoped to current_version_id)"] --> B["User clicks Save"]
     B --> C["saved_opportunities row created,\npinning opportunity_id AND\nsaved_opportunity_version_id"]
     C --> D{"User moves to\napplication pipeline?"}
-    D -- yes --> E["applications row created\n(status = identified)"]
+    D -- yes --> E["applications row created\n(status = preparing,\nsaved_opportunity_id set)"]
     E --> F["User adds/accepts suggested tasks"]
     F --> G["tasks rows created,\nlinked to application"]
     D -- not yet --> H["Stays saved only"]
@@ -131,9 +147,23 @@ as they saw it — including which `source_listing_id` (and therefore which sour
 even if the canonical opportunity later gains new versions, gets merged with another duplicate, or
 its current-version pointer moves on.
 
+A manually entered `private_opportunities` row (see
+[USER_WORKFLOWS.md](USER_WORKFLOWS.md#workflow-9--manually-adding-an-opportunity-phase-2a-see-adr-018))
+follows the same "moves to application pipeline" step, but there is no separate save step first —
+the private row is already the user's own saved record — and the `applications` row it creates sets
+`private_opportunity_id` plus `private_opportunity_snapshot_jsonb` instead of `saved_opportunity_id`
+(see [DATA_MODEL.md](DATA_MODEL.md#user-activity-domain-user-owned-rls-protected)). Exactly one of
+`saved_opportunity_id` / `private_opportunity_id` is set on any given `applications` row.
+
 ## 4. Market intelligence aggregation
 
-A scheduled (weekly, proposal) Python job reads recent opportunity versions and their structured
+**Status**: Phase 6, not yet designed or built. Its language and execution model are **not**
+decided by [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (scoped explicitly to opportunity
+ingestion and deterministic opportunity scoring only) — Python remains a plausible candidate here,
+alongside TypeScript for consistency with ingestion, to be decided at that phase's own planning
+pass. The description below is preserved as the original planning-phase proposal.
+
+A scheduled (weekly, proposal) job reads recent opportunity versions and their structured
 required/preferred qualifications, tallies skill/tool/tooling mentions per engineering-area
 category, and writes a compact aggregate snapshot to Postgres (not recomputed on every page load).
 **Aggregation counts distinct canonical `opportunity_id`s, excluding any with `status =
@@ -149,11 +179,13 @@ expensive aggregation off the request path entirely.
 
 | Data | Update cadence | Rationale |
 |---|---|---|
-| Opportunity ingestion | Daily, or a few times daily per source | Balances freshness against GitHub Actions free-minute budget and source politeness |
-| Resume parsing | Every 10-15 minutes, eventually consistent | Fast enough to feel responsive without needing a live server — but never guaranteed to hit that interval exactly, per §0 |
-| Scoring recompute | After every ingestion run that changes a `current_version_id`, and after any profile edit | Scores must never silently go stale relative to the profile or version they claim to explain |
-| Market intelligence snapshot | Weekly | Aggregate trends don't meaningfully shift faster than this at MVP data volume |
+| Opportunity ingestion | Whenever the owner runs the local CLI (Phase 2A; see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) — a daily or few-times-daily target *once* a later hosted/scheduled stage is adopted | No schedule exists yet; there is no cron budget to balance against today. Source politeness still governs the self-imposed per-run request budget regardless of cadence |
+| Resume parsing | Every 10-15 minutes, eventually consistent (Phase 1B, not yet designed) | Fast enough to feel responsive without needing a live server — but never guaranteed to hit that interval exactly, and its execution model is a separate, undecided question (see [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md)'s scope note) |
+| Scoring recompute | Whenever the owner runs the local scoring CLI after an ingestion run that changed a `current_version_id` (Phase 2A); after every ingestion run automatically, once a scheduled stage exists | Scores must never silently go stale relative to the opportunity version they claim to explain |
+| Market intelligence snapshot | Weekly (Phase 6, not yet built) | Aggregate trends don't meaningfully shift faster than this at MVP data volume |
 
-These cadences are targets the schedule aims for, not commitments the system can guarantee — see
-§0 and [OBSERVABILITY.md](OBSERVABILITY.md) for how staleness itself is monitored and surfaced to
-the user rather than silently assumed.
+Today's cadences are simply "whenever the owner runs the CLI," not a schedule at all. The
+daily/weekly figures above are targets for the later, explicitly-triggered scheduled stage in
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) — see §0 and
+[OBSERVABILITY.md](OBSERVABILITY.md) for how staleness itself is monitored and surfaced to the user
+rather than silently assumed, under either execution model.

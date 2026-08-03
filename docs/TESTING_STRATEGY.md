@@ -120,7 +120,14 @@ their visible status always comes from the returned revision/review state.
   [PROFILE_COMPLETENESS_SPEC.md](PROFILE_COMPLETENESS_SPEC.md). Fixtures must be synthetic and
   public-safe; Phase 0 regressions remain required.
 
-## 4. Adapter and scheduled-job testing
+## 4. Adapter and local-ingestion-job testing
+
+**Status (Phase 2A.0)**: adapters are TypeScript, run today as an explicit local CLI, not a
+scheduled job — see [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) and
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md). CI gains a third job (`ingestion`:
+install, format check, lint, typecheck, test) alongside the existing `frontend` and `database`
+jobs, starting at Phase 2A.1; it never makes a live third-party network call. The testing
+principles below are otherwise unchanged and would apply identically to a future scheduled stage.
 
 - Each adapter is tested against **recorded fixture responses** (a saved real response, or a
   realistic synthetic one, checked into the test suite — see §6 for what those fixtures may and
@@ -209,3 +216,62 @@ Load/performance testing (no meaningful load at one-user scale), cross-browser m
 beyond modern evergreen browsers, and automated accessibility auditing beyond basic semantic HTML
 practices — revisit if/when the user base or ambition grows (see
 [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)).
+
+## 10. Personal-first testing scope (Phase 2A.1 and similar feature work)
+
+Per the engineering priority in
+[MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority), Phase 2A.1 and later
+feature-sized work does **not** repeat the exhaustive Phase 1A security-review pattern (§2's full
+composite-parent-bypass/cross-user matrix per table) for every newly introduced table. §1's
+priority order and §2's *method* (real Postgres, never mocked) are unchanged — this section narrows
+*how much* of that method is required per new table/feature, not whether RLS is tested at all.
+
+**Essential database checks**, for each newly introduced table:
+
+- Schema and important constraints.
+- Owner can use their own private records.
+- One representative cross-user denial for user-owned data (not the full read/insert/update/delete
+  permutation matrix — one proven-denied case per table is sufficient signal that RLS is wired up).
+- Browser cannot modify shared ingestion records (`opportunities`, `opportunity_versions`,
+  `source_listings`, etc.).
+- Trusted local ingestion (service-role) can write shared records.
+- Saved-opportunity version pinning works (`saved_opportunity_version_id` set correctly at save
+  time and never silently repointed).
+- Application status constraints work (valid enum values only; `private_opportunity_snapshot_jsonb`
+  populated exactly when `private_opportunity_id` is set — see
+  [DATA_MODEL.md](DATA_MODEL.md#user-activity-domain-user-owned-rls-protected)).
+- Cleanup works (a deleted parent doesn't orphan rows RLS would otherwise hide forever).
+
+**Essential API checks**:
+
+- Browse shared opportunities.
+- Save and hide.
+- Create and update an application.
+- Pin the intended listing version (shared) or capture the snapshot (private) at application
+  creation.
+- Preserve a private manual snapshot across a later edit to the source `private_opportunities` row.
+- User-owned records are not exposed to another test user.
+- Browser cannot forge an ingested (`opportunities`/`opportunity_versions`/`source_listings`) record.
+
+**Essential frontend checks**:
+
+- Real primary workflows (browse, save, apply, track status, interview-prep notes).
+- Loading and failure states.
+- Save/hide.
+- Application creation and status updates.
+- Listing snapshot display and interview notes.
+- Search/filter behavior.
+
+**Not required** for Phase 2A.1-scale feature work:
+
+- Exhaustive privilege permutations for every column.
+- Large security-catalog audits for ordinary CRUD tables.
+- Admin-role testing (no admin role exists).
+- Public-registration abuse testing (no public registration exists).
+- Team or organization isolation testing (no teams/organizations exist).
+- Scalability testing.
+- Deployment hardening beyond what's already in place.
+
+Privileged functions (any new `SECURITY DEFINER` RPC) and new external-content trust boundaries
+still receive focused, non-skipped tests when actually introduced — this section reduces breadth
+for ordinary CRUD, not depth where a concrete risk exists.

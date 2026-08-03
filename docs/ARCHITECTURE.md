@@ -6,6 +6,10 @@ explains the *why*, not just the *what* — read it alongside [docs/adr/](adr/RE
 
 ## 1. Guiding constraints
 
+- Personal-first engineering priority: until the owner validates real-world usefulness, prioritize
+  working product features over preparation for hypothetical future users — see
+  [MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority) for the exact policy
+  and the safeguards that remain required regardless of product stage.
 - Single user today, must not require a rewrite to support more (see
   [ADR-008](adr/ADR-008-private-first-multi-user-later.md)).
 - $0 recurring cost by default (see [ADR-009](adr/ADR-009-zero-cost-mvp-deployment.md) and
@@ -20,34 +24,48 @@ explains the *why*, not just the *what* — read it alongside [docs/adr/](adr/RE
 
 ## 2. Components
 
+**Status note (Phase 2A.0)**: the diagram below reflects the current design after
+[ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (TypeScript ingestion) and
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-first execution), which supersede
+this document's earlier depiction of scheduled GitHub Actions running a Python ingestion job. No
+ingestion code exists yet and no hosted Supabase project exists yet — the diagram distinguishes
+**implemented**, **approved near-term**, and **possible later** components explicitly, per those
+ADRs.
+
 ```mermaid
 flowchart TB
-    subgraph Client["Browser (user device)"]
+    subgraph Client["Browser (user device) — implemented"]
         SPA["React + TypeScript SPA\n(Vite build)"]
     end
 
-    subgraph CF["Cloudflare Pages"]
+    subgraph CF["Cloudflare Pages — implemented"]
         Static["Static asset hosting\n(the built SPA)"]
     end
 
-    subgraph Supabase["Supabase (managed)"]
-        Auth["Auth\n(email/magic-link)"]
+    subgraph Supabase["Supabase — implemented (local dev stack only; no hosted project yet)"]
+        Auth["Auth\n(email/password)"]
         PG["Postgres\n(app data + RLS)"]
         Storage["Storage\n(resume files deferred to Phase 1B;\nno raw external content by default)"]
-        Edge["Edge Functions (Deno)\n[reserved, not used at MVP]"]
+        Edge["Edge Functions (Deno)\n[reserved; candidate future ingestion host,\nsee ADR-017 stage 2 — not built]"]
     end
 
-    subgraph GHA["GitHub Actions (scheduled)"]
-        Ingest["Python ingestion job\n(source adapters)"]
-        Score["Python scoring job\n(deterministic pipeline)"]
-        Parse["Python resume-parsing job\n(deferred to Phase 1B)"]
+    subgraph Local["Owner's local machine — approved near-term design (ADR-016/ADR-017)\nno code implemented yet"]
+        Ingest["TypeScript ingestion CLI\n(source adapters, run on demand)"]
+        Score["TypeScript scoring CLI\n(deterministic ECE relevance, run on demand)"]
     end
 
-    subgraph Ext["External sources"]
-        ATS["Greenhouse/Lever job-board APIs"]
-        Gov["Public government/EU job feeds"]
-        Events["Public event/university calendars"]
-        UserLinks["User-submitted links"]
+    subgraph FutureHosted["Possible later hosted execution — not provisioned\n(ADR-017 migration path, evaluated only when triggered)"]
+        FutureEdge["Supabase Edge Function on a schedule"]
+        FutureWorker["Cloudflare Worker + Cron Trigger"]
+    end
+
+    subgraph Deferred["Deferred — Phase 1B, execution model not yet decided"]
+        Parse["Resume-parsing job\n(language/host TBD; ADR-016 does not decide this)"]
+    end
+
+    subgraph Ext["External sources — Phase 2A"]
+        ATS["Greenhouse Job Board API\n(first adapter, ADR-016/ingestion architecture)"]
+        Manual["User-confirmed manual entries\n(no automated fetch, see ADR-018)"]
     end
 
     SPA <--> Static
@@ -55,15 +73,16 @@ flowchart TB
     SPA <--> PG
     SPA <--> Storage
 
-    Ingest --> Ext
-    Ingest -->|service-role key, GitHub secret| PG
-    Score -->|reads opportunities + profile, writes scores| PG
+    Ingest --> ATS
+    Ingest -->|service-role key, local .env, never committed| PG
+    Score -->|reads opportunities, writes deterministic scores| PG
+    Manual -.->|browser-confirmed, private row, see ADR-018| PG
+
+    FutureEdge -.->|later migration stage, not built| PG
+    FutureWorker -.->|later migration stage, not built| PG
+
     Parse -.->|future: reads uploaded resume| Storage
     Parse -.->|future: writes reviewable suggestions| PG
-
-    GHA -.->|cron trigger| Ingest
-    GHA -.->|cron trigger| Score
-    GHA -.->|cron trigger| Parse
 ```
 
 ### Frontend — React + TypeScript + Vite, hosted on Cloudflare Pages
@@ -147,35 +166,56 @@ raw external HTML/JSON as it was originally fetched. Concretely:
 ingestion run doubles as a keep-alive, but this is documented explicitly as a real operational risk
 in [COST_MODEL.md](COST_MODEL.md) and [OBSERVABILITY.md](OBSERVABILITY.md), not hidden.
 
-### Ingestion, parsing, and scoring — Python, run by GitHub Actions on a schedule
+### Ingestion and scoring — TypeScript, run as a local CLI (Phase 2A; approved near-term design, not yet implemented)
 
-Three related but distinct jobs, all Python, all triggered by GitHub Actions cron:
+**Status**: this section reflects [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (runtime
+language) and [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (execution model), which
+supersede this document's earlier Python/GitHub-Actions description for ingestion and opportunity
+scoring specifically. Resume parsing's language and execution model remain a separate, undecided
+Phase 1B question (see below) — neither ADR resolves it.
+
+Two related but distinct TypeScript jobs, run today by the repository owner as an explicit local
+CLI, not on any schedule:
 
 1. **Ingestion**: runs each configured source adapter, normalizes results into the common
    opportunity schema, resolves cross-source identity (auto-linking on strong evidence, flagging
    uncertain matches for review, otherwise creating a new canonical opportunity — see
    [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md)), diffs against
    the last known version, and writes new/updated source listings, opportunities, and version
-   history to Postgres using a service-role key held in GitHub Actions secrets (never exposed to
-   the browser).
-2. **Resume parsing**: a future Phase 1B capability. It will extract separately reviewable
-   suggestions, never overwrite confirmed profile records, and must revisit field/suggestion-level
-   provenance ([ADR-014](adr/ADR-014-confirmed-profile-versus-imported-suggestions.md)).
-3. **Scoring**: recomputes market-relevance and personal-competitiveness scores whenever
-   opportunities or the profile change meaningfully, writing explainable, versioned score records.
+   history to Postgres using a service-role key read from a gitignored local `.env.local` (never
+   committed, never held by any hosted compute at this stage).
+2. **Scoring**: recomputes deterministic, profile-independent market-relevance scores
+   ([SCORING_AND_MATCHING_MODEL.md](SCORING_AND_MATCHING_MODEL.md) Ranking 1) whenever
+   opportunities change meaningfully, writing explainable, versioned score records. Personal
+   competitiveness (Ranking 2) is later work, deferred until the profile domains it needs exist.
 
-Chosen as Python specifically for its data/text-processing and future ML ecosystem (resume
-parsing, NLP-assisted extraction, pandas-based market analysis), independent of what language the
-(currently nonexistent) synchronous backend would use if one is added later.
+Chosen as TypeScript specifically because the actual Phase 2A workload (fetch JSON, validate,
+normalize, sanitize, hash, upsert) does not need Python's data/ML ecosystem, and because the
+realistic future hosted execution targets (Supabase Edge Functions, Cloudflare Workers) both run
+TypeScript natively — see [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) for the full
+reasoning, including what this does **not** decide about Phase 1B resume parsing.
 
-**Where it runs**: GitHub Actions, on standard GitHub-hosted runners. The repository is public, so
-these minutes are free and unlimited (see [COST_MODEL.md](COST_MODEL.md)) — not always-on; each
-job is a short-lived process that starts, does work, writes to Postgres, and exits.
+**Where it runs today**: the repository owner's own machine, invoked on demand
+(`node --env-file=.env.local dist/cli.js ingest ...`), against the local (or, once one exists, a
+real hosted) Supabase stack — not GitHub Actions, and not any other scheduled or hosted compute.
+See [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) for why, and for the explicit,
+trigger-gated later migration path (Supabase Edge Function → Cloudflare Worker → last-resort
+scheduled container), none of which is provisioned yet.
+
+**Resume parsing** (a future Phase 1B capability, unaffected by ADR-016/ADR-017): it will extract
+separately reviewable suggestions, never overwrite confirmed profile records, and must revisit
+field/suggestion-level provenance
+([ADR-014](adr/ADR-014-confirmed-profile-versus-imported-suggestions.md)). Its language and
+execution model are open questions for that phase's own design pass — Python remains a plausible,
+but not yet decided, candidate (see [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)).
 
 **Failure cases**: a failed adapter run must not corrupt existing data — writes are additive
 (new versions), and a run that errors partway logs the failure (see
-[OBSERVABILITY.md](OBSERVABILITY.md)) and is safely retried on the next schedule without
-duplicating data, using source-provided stable IDs or URL+content hashing for idempotency.
+[OBSERVABILITY.md](OBSERVABILITY.md)) and is safely re-run by the owner without duplicating data,
+using source-provided stable IDs or URL+content hashing for idempotency. Because runs are manual,
+"best-effort cron timing" does not apply here the way it does to the future hosted stages; freshness
+is exactly as current as the owner's last run, and the UI must present `stale` accordingly (see
+[DATA_FLOW.md](DATA_FLOW.md)).
 
 ### Reserved, not built at MVP: a synchronous API/worker layer
 
@@ -183,21 +223,30 @@ Some future features (instant resume processing on upload, synchronous LLM expla
 receivers for email-based alerts) need a request/response server, not a batch job. The
 architecture reserves Supabase Edge Functions (Deno, colocated with the database, generous free
 tier) as the first place such logic would go, with a move to a small containerized FastAPI service
-(Python, consistent with the ingestion codebase) as the fallback if Edge Functions' constraints
-(execution time, language) don't fit. This is discussed, not built — see
-[ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md).
+(Python) as the fallback if Edge Functions' constraints (execution time, language) don't fit. This
+is discussed, not built — see [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md). (Note:
+ADR-002's original fallback rationale described this Python service as "consistent with the
+ingestion codebase" — since [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) moved ingestion
+to TypeScript, that specific justification no longer holds; ADR-002's actual decision, no
+synchronous backend at MVP, is otherwise unaffected and remains Accepted.)
 
-## 3. Repository layout (Phase 0: implemented as shown)
+## 3. Repository layout (Phase 0: implemented as shown; `ingestion/` updated by Phase 2A)
 
 ```
 careeros/
   app/            React + TypeScript + Vite frontend (implemented, Phase 0)
-  ingestion/      Python: source adapters, normalization, scoring, resume parsing
-                  (placeholder only -- no code yet, see ingestion/README.md; Phase 2+)
+  ingestion/      TypeScript: source adapters, normalization, deterministic scoring
+                  (placeholder only as of Phase 2A.0 -- no code yet, see ingestion/README.md
+                  and ADR-016; implemented starting Phase 2A.1. Resume parsing is a
+                  separate, undecided Phase 1B question -- not assumed to live here.)
   supabase/       config.toml, migrations/, tests/database/ (pgTAP), scripts/ (local-only
                   dev tooling) -- implemented, Phase 0
   docs/           this documentation set
-  .github/workflows/   ci.yml (Phase 0); ingestion/parsing/scoring schedules are Phase 2+
+  .github/workflows/   ci.yml (Phase 0; gains an `ingestion` lint/typecheck/test job in
+                       Phase 2A.1). No ingestion/scoring *schedule* is planned in GitHub
+                       Actions -- ingestion runs as a local CLI (see ADR-017); scheduled
+                       hosted execution, if ever adopted, targets Supabase Edge Functions or
+                       Cloudflare Workers, not GitHub Actions cron.
 ```
 
 A monorepo, not separate repositories, because the frontend, database schema, and ingestion
@@ -239,11 +288,17 @@ abstract.
 
 | Option | When it would be the better choice | Why not chosen for the MVP |
 |---|---|---|
-| **No backend; direct Supabase access + batch Python (chosen)** | Fits a single-user tool where almost every operation is CRUD-on-your-own-data (RLS-safe) or a scheduled batch job | — |
+| **No backend; direct Supabase access + batch ingestion/scoring (chosen; TypeScript per [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md), local CLI per [ADR-017](adr/ADR-017-local-first-ingestion-execution.md))** | Fits a single-user tool where almost every operation is CRUD-on-your-own-data (RLS-safe) or an owner-invoked batch job | — |
 | **FastAPI (Python) as a real API server** | Once synchronous, user-triggered server-side logic is unavoidable (instant resume parsing, LLM explanation endpoints with rate limiting, webhook receivers) | Needs an always-on host; free tiers for that (Render, Fly.io, Railway) come with sleep/cold-start behavior or limited free hours, adding operational complexity not justified yet. This is the **documented target** for when the batch-only model proves insufficient — see [ADR-002](adr/ADR-002-frontend-and-backend-boundaries.md) |
-| **Node.js backend** | If the team wanted one language across the whole stack | Python was already the right choice for ingestion/parsing/scoring (see below); running two backend languages is worse than running Python everywhere non-frontend |
+| **Node.js backend** | If the team wanted one language across the whole stack | This synchronous-backend question is independent of the ingestion-language decision below; no synchronous backend is built at MVP either way (this section's own Decision) |
 
 ### Ingestion/analysis language
+
+**Status (Phase 2A.0)**: superseded for opportunity ingestion and deterministic scoring by
+[ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) — see that ADR for the current decision and
+reasoning. The paragraph below is preserved as the original planning-phase rationale, which
+correctly anticipated Phase 1B resume parsing and Phase 6 market aggregation; those remain open,
+separately-decided questions, not resolved by ADR-016.
 
 Python was specified as a requirement in the brief and is confirmed here: mature HTML
 parsing/sanitization libraries, pandas for market-skill aggregation, and the most direct path to
@@ -276,10 +331,10 @@ would be a second system to keep in sync with Postgres for no clear win.
 
 | Option | When it would be the better choice | Why not chosen for the MVP |
 |---|---|---|
-| **Cloudflare Pages (chosen) for the frontend; Supabase managed for data/auth/storage; GitHub Actions for scheduled compute** | Fits a $0, single-user, low-traffic tool with no always-on compute need | — |
+| **Cloudflare Pages (chosen) for the frontend; Supabase managed for data/auth/storage; local CLI for ingestion/scoring today, with a hosted scheduled stage (Supabase Edge Function, then Cloudflare Worker) evaluated later — see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)** | Fits a $0, single-user, low-traffic tool with no always-on compute need | — |
 | **AWS / Azure / GCP** | Needed once the project needs fine-grained IAM, VPC-level network control, managed queues at scale, or the student specifically wants cloud-provider experience with real infrastructure spend controls | Overkill for current scale; meaningfully higher operational and cost-management burden for a single maintainer. Worth revisiting deliberately at the public-launch phase, and separately, as a *learning* exercise if desired — but not required by the product |
-| **Self-hosted** (home server, student cloud credits via GitHub Student Developer Pack) | If GitHub Actions free minutes or Supabase free-tier limits are actually hit | A real $0-adjacent option given the user's student status; documented as a fallback in [COST_MODEL.md](COST_MODEL.md) rather than the default, to avoid taking on server maintenance before it's needed |
-| **Long-running background worker** (always-on process, not scheduled batch) | If ingestion needs near-real-time polling (many sources checked every few minutes) | Not needed at MVP ingestion frequency (daily/few-times-daily is enough for job postings and events); scheduled GitHub Actions jobs are simpler to reason about and free |
+| **Self-hosted** (home server, student cloud credits via GitHub Student Developer Pack) | If Supabase free-tier limits are actually hit | A real $0-adjacent option given the user's student status; documented as a fallback in [COST_MODEL.md](COST_MODEL.md) rather than the default, to avoid taking on server maintenance before it's needed |
+| **Long-running background worker** (always-on process, not scheduled batch) | If ingestion needs near-real-time polling (many sources checked every few minutes) | Not needed at MVP ingestion frequency (daily/few-times-daily is enough for job postings and events, and Phase 2A doesn't even run on a schedule yet); a future *scheduled* hosted stage (Supabase Edge Function or Cloudflare Worker, not GitHub Actions — see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) is simpler to reason about and free |
 | **Dedicated serverless functions (Vercel/Cloudflare Workers) beyond Supabase Edge Functions** | If synchronous compute needs to live outside Supabase's own edge runtime for latency, language, or ecosystem reasons | Supabase Edge Functions are colocated with the database (fewer network hops, one fewer provider to manage) and are the first thing evaluated when synchronous compute becomes necessary |
 
 ## 5. Where each component runs (summary)
@@ -289,22 +344,28 @@ would be a second system to keep in sync with Postgres for no clear win.
 | React SPA | User's browser | Untrusted execution environment; never holds secrets beyond the user's own short-lived session token |
 | Cloudflare Pages | Cloudflare's CDN | Serves static assets only; no application logic or secrets |
 | Supabase Auth/Postgres/Storage | Supabase-managed cloud (AWS-backed) | Authoritative data store; RLS is the authorization boundary |
-| Python ingestion/parsing/scoring | GitHub Actions runners (ephemeral, per-run VMs) | Holds the Postgres service-role key as a GitHub secret; never exposed to the browser or logs |
+| TypeScript ingestion/scoring (Phase 2A; [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md)) | The repository owner's own machine, run on demand as a local CLI ([ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) — not GitHub Actions | Holds the Postgres service-role key in a gitignored local `.env.local`; never committed, never exposed to the browser or logs. A later hosted stage (Supabase Edge Function, Cloudflare Worker) would hold it in that platform's own secret storage instead |
+| Resume parsing (Phase 1B, deferred) | Not yet decided — language and execution model are open questions ADR-016/ADR-017 do not resolve | Not yet decided |
 | External sources | Third-party infrastructure | Fully untrusted; every response is treated as untrusted data, sanitized before storage |
 
 ## 6. Scalability limits of this design
 
 This design comfortably handles one user and a realistic ingestion volume (low thousands of
-opportunity records, daily-to-hourly ingestion cadence). Known ceilings, documented honestly rather
+opportunity records). Under Phase 2A's manual local-CLI execution
+([ADR-017](adr/ADR-017-local-first-ingestion-execution.md)), cadence is simply "however often the
+owner runs it" rather than a target frequency; the daily-to-hourly figures below describe a
+possible future scheduled stage, not the current design. Known ceilings, documented honestly rather
 than solved preemptively:
 
-- **GitHub Actions minutes** are free and unlimited on standard runners for this public
-  repository; the practical ceiling is runner concurrency and job duration, not a minute quota —
-  not a problem at daily/few-times-daily cadence, would become a design question at near-real-time
-  polling of many sources.
-- **Supabase free-tier project pausing on inactivity** requires a keep-alive strategy (the
-  scheduled jobs themselves largely cover this, but this is a real fragility, not a solved
-  problem — see [COST_MODEL.md](COST_MODEL.md)).
+- **CI (GitHub Actions) minutes** are free and unlimited on standard runners for this public
+  repository; the practical ceiling is runner concurrency and job duration, not a minute quota. This
+  applies to CI today; if a future scheduled hosted stage for ingestion is ever adopted, it targets
+  Supabase Edge Functions or Cloudflare Workers, not GitHub Actions cron — see
+  [ADR-017](adr/ADR-017-local-first-ingestion-execution.md).
+- **Supabase free-tier project pausing on inactivity** requires a keep-alive strategy. The original
+  plan assumed scheduled ingestion jobs would largely cover this; under Phase 2A's manual execution
+  model that mitigation does not apply, so this is currently a **more exposed** fragility than
+  originally planned, not a solved one — see [COST_MODEL.md](COST_MODEL.md) §3.
 - **No synchronous backend** means any feature requiring instant server-side response (real-time
   chat-style LLM interaction, instant resume feedback) is out of scope until the Edge
   Function/FastAPI layer is added.
@@ -314,9 +375,15 @@ than solved preemptively:
 
 ## 7. GitHub Actions reliability characteristics (read before relying on cadence)
 
+**Scope note (Phase 2A.0)**: opportunity ingestion and scoring do **not** currently run on GitHub
+Actions at all — see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md); they run as a local
+CLI on demand. This section's cautions apply to CI itself (which does run on every push/PR, see
+`.github/workflows/ci.yml`) and would apply again to any *future* scheduled workflow this project
+adopts — they are not a description of how ingestion currently behaves.
+
 The cadences in [DATA_FLOW.md](DATA_FLOW.md#5-data-freshness-expectations-proposal) are targets,
-not guarantees. This is not a caveat to skim past — it shapes how every scheduled job and every
-UI status indicator must be built:
+not guarantees for whichever execution stage is current. This is not a caveat to skim past — it
+shapes how every scheduled job and every UI status indicator must be built:
 
 - **Scheduled (`cron`) triggers are best-effort and can start late.** GitHub's own documentation
   states that scheduled workflows may be delayed during periods of high load, most commonly at the

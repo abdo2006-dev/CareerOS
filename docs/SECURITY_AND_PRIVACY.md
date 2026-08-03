@@ -63,11 +63,17 @@ multi-user-later" claim in the project brief; it is not just an aspiration.
 
 ## 4. Secret storage
 
-- Supabase service-role key: GitHub Actions repository secret, used only inside ingestion/scoring
-  jobs, never logged, never in a committed file.
+- Supabase service-role key: **currently (Phase 2A)** read by the local ingestion/scoring CLI from
+  a gitignored `ingestion/.env.local`, never logged, never in a committed file, never held by any
+  hosted or scheduled compute — see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md). If a
+  later hosted execution stage is adopted (Supabase Edge Function or Cloudflare Worker, per that
+  ADR's migration path), the service-role key (or, preferably by then, a dedicated least-privilege
+  database role) moves to that host's own secret storage — not to a GitHub Actions repository
+  secret, since no live ingestion is planned to run there (see [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)
+  for why).
 - Any future third-party API keys (event platform APIs, government job-portal API keys): same
-  treatment — repository/environment secrets, least-privilege scopes where the provider supports
-  them.
+  treatment — held only by whichever trusted execution context actually runs the code that needs
+  them, least-privilege scopes where the provider supports them.
 - No secret is ever placed in a file committed to the repository, including `.env` files — a
   `.env.example` with placeholder names is the pattern once implementation starts.
 - **The repository is public** (see [ADR-009](adr/ADR-009-zero-cost-mvp-deployment.md) and
@@ -141,18 +147,36 @@ HTML/text. Handling rules:
 
 ## 7. Server-side request forgery (SSRF)
 
-The user-submitted-link adapter (see
-[DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md)) is the primary SSRF surface: it
-makes a server-side (GitHub Actions job) HTTP request to a URL a user provides. Mitigations:
+**Status (Phase 2A.0)**: **no generic server-side URL fetcher is built in Phase 2A.** The first
+manual-import workflow ([ADR-018](adr/ADR-018-private-manual-opportunities.md)) is **metadata-only**
+— the user pastes a URL and confirms normalized fields themselves; CareerOS does not automatically
+fetch arbitrary, unsupported URLs. A configured adapter's own URL pattern (e.g. a Greenhouse board
+URL) may later be recognized and routed through that specific, allowlisted adapter, but that is the
+adapter's own fetch (already scoped to its registered source, see
+[INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md)), not a general-purpose fetcher.
 
-- Reject non-`http(s)` schemes outright.
+The control set below is retained as the **required design for if and when** a generic server-side
+fetcher is ever built (e.g., "fetch and pre-fill from any pasted URL," a materially riskier feature
+than metadata-only manual entry) — it is not yet implemented, and must not be treated as already
+protecting a feature that does not exist yet:
+
+- HTTPS only; reject non-`https` schemes outright.
 - Resolve the hostname and reject requests targeting private/internal/link-local IP ranges (RFC
   1918, loopback, link-local, and cloud metadata endpoints like `169.254.169.254`) before
   connecting — checked at connection time, not just on the input string, to defend against
-  DNS-rebinding.
-- Enforce a request timeout and a response-size cap.
-- No redirects followed to a disallowed target (re-validate the final resolved host after any
-  redirect).
+  DNS-rebinding; the resolved, validated IP is pinned for the actual connection.
+- Enforce a connect and total request timeout, and a response-size cap with streaming abort.
+- Content-type allowlist; no credentials, cookies, or authentication headers ever forwarded; no
+  arbitrary JavaScript execution.
+- No redirects followed to a disallowed target (re-validate the final resolved host after every
+  redirect, up to a small maximum).
+- For any *automated adapter* (as opposed to a hypothetical generic fetcher), a source-domain
+  allowlist derived from that source's own registered base URL, so an adapter can only ever reach
+  its own configured host.
+
+See [INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md) for the adapter-fetch design that *is*
+built in Phase 2A, which is narrower and lower-risk than a generic fetcher: each adapter only ever
+requests its own registered, reviewed source.
 
 ## 8. Untrusted file uploads (resumes)
 

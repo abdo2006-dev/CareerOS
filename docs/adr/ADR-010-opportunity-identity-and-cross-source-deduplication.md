@@ -132,3 +132,13 @@ flag-not-merge fixture test, no-match new-opportunity fixture test, merge-confir
 re-pointing test, market-aggregation double-count-exclusion test, and a query-surface test
 asserting no opportunity-listing or scoring query returns `merged_duplicate` rows without
 following the merge pointer.
+
+## Note (Phase 2A.0): scope relative to private manual entries
+
+This ADR's identity/deduplication model governs **shared, service-role-written** opportunities
+only. [ADR-018](ADR-018-private-manual-opportunities.md) introduces `private_opportunities`, a
+separate, user-owned table for manually entered postings, which is entirely outside this ADR's
+scope: a private entry never participates in strong/weak matching, never creates or resolves a
+`potential_duplicate_links` row, and is never auto-linked to a shared opportunity. The only bridge
+between the two is the explicit, trusted-only, additive "promotion" pointer ADR-018 describes,
+which this ADR's decision and required tests are unaffected by.

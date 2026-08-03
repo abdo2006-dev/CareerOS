@@ -65,44 +65,82 @@ unimplemented checks are shown as product-unavailable rather than user omissions
 **Exit condition**: a resume produces a truthful, reviewable draft without altering confirmed
 records unless the user explicitly accepts a change.
 
-## Phase 2 — First ingestion pipeline, unscored
+## Phase 2A — Opportunity discovery MVP
 
-- Source-adapter interface implemented ([ADR-004](adr/ADR-004-source-adapter-architecture.md)),
-  producing `source_listings`, not opportunities directly.
-- The identity/deduplication step ([ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md))
-  is built alongside the first adapter, even though a single adapter alone can't yet produce a
-  cross-source duplicate — it's the shared pipeline every subsequent adapter plugs into, and
-  retrofitting it after a second adapter exists would mean re-processing already-ingested data.
-- One or two ATS (Greenhouse/Lever) adapters built first, since they offer the best
-  coverage-to-effort ratio (see [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md)).
-- Normalization into the complete common schema (see
-  [DATA_MODEL.md](DATA_MODEL.md#opportunity_versions--complete-field-list)), full version history,
-  `removed` detection at the listing level.
-- A plain, unranked opportunity browse/search view (Postgres full-text search) in the frontend.
+**Status**: architecture and source research complete (Phase 2A.0); no schema, adapter, or UI code
+implemented yet. Runtime and execution-model decisions are recorded in
+[ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (TypeScript, superseding
+[ADR-003](adr/ADR-003-python-ingestion-pipeline.md) for this scope),
+[ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-CLI execution first), and
+[ADR-018](adr/ADR-018-private-manual-opportunities.md) (manual entries are private, owned rows).
+Source compliance findings are recorded in
+[DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md); the adapter/orchestrator design is
+in [INGESTION_ARCHITECTURE.md](INGESTION_ARCHITECTURE.md).
 
-**Exit condition**: real German ECE-relevant postings are visible and searchable, with working
-version history, before any scoring exists.
+**Sequencing note**: the original Phase 2A.0 plan split "opportunity foundation" (schema, RLS,
+empty UI) and "Greenhouse adapter" into two separate PRs. Per the personal-first priority in
+[MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority), those are combined
+below into one vertical milestone — a feature is not useful merely because tables and empty screens
+exist; the owner needs to actually browse and act on real postings before the next slice starts.
 
-## Phase 3 — Explainable scoring
+- **Phase 2A.0 — Architecture and compliance** (this PR): ADRs, source-compliance registry,
+  ingestion architecture, shared-vs-private opportunity data decision, implementation boundaries.
+  No runtime implementation.
+- **Phase 2A.1 — Personal Opportunity MVP** (the first minimum-useful milestone; one vertical PR or
+  tightly coordinated implementation branch): shared opportunity identity/version schema
+  ([DATA_MODEL.md](DATA_MODEL.md)), the `private_opportunities` table
+  ([ADR-018](adr/ADR-018-private-manual-opportunities.md)), the ingestion-source registry, exact
+  RLS/grants ([RLS_POLICY_MATRIX.md](RLS_POLICY_MATRIX.md)); the TypeScript local ingestion CLI
+  ([ADR-016](adr/ADR-016-typescript-ingestion-runtime.md),
+  [ADR-017](adr/ADR-017-local-first-ingestion-execution.md)) implementing the source-adapter
+  interface ([ADR-004](adr/ADR-004-source-adapter-architecture.md)) for Greenhouse first, since it
+  offers unauthenticated, robots-permitted, complete-response public access with the strongest
+  observed timestamp coverage (see [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md))
+  against a small, reviewed set of configured boards; the identity/deduplication step
+  ([ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md)) built alongside
+  this first adapter, even though one adapter alone can't yet produce a cross-source duplicate —
+  it's the shared pipeline every subsequent adapter plugs into; normalization into the complete
+  common schema (see [DATA_MODEL.md](DATA_MODEL.md#opportunity_versions--complete-field-list)), full
+  version history, conservative closure detection; manual metadata entry for unsupported sources;
+  opportunity list/detail UI, search and essential filters (Postgres full-text search), save/hide;
+  and application tracking end to end — status pipeline, pinned listing snapshots (shared and
+  private, see [DATA_MODEL.md](DATA_MODEL.md#user-activity-domain-user-owned-rls-protected)), and
+  interview-preparation notes. No live third-party call in CI.
+- **Phase 2A.2 — Explainable ECE market relevance**: deterministic taxonomy and rule-based scoring
+  (Ranking 1 only — profile-independent; personal competitiveness/Ranking 2 remains Phase 3), a
+  ranking UI, synthetic evaluation vectors. No acceptance probability, per
+  [SCORING_AND_MATCHING_MODEL.md](SCORING_AND_MATCHING_MODEL.md).
+
+**Exit condition (met at Phase 2A.1)**: the owner can run one local command, import real Greenhouse
+opportunities, browse and search them in CareerOS alongside any manually entered private
+opportunities, save a listing, mark it applied, update its status, and later inspect the exact
+pinned listing content used for interview preparation — before any relevance ranking exists.
+Phase 2A.2 makes the list explainably ranked rather than merely searchable.
+
+## Phase 3 — Personal-competitiveness scoring
+
+**Note**: Ranking 1 (profile-independent market/degree relevance) moved earlier, into
+**Phase 2A.2**, since it needs no profile data and makes Phase 2A's opportunity list explainably
+ranked rather than merely searchable. Phase 3 covers what still requires profile domains that don't
+exist until Phase 1A is fully built out.
 
 - Hard eligibility rules.
-- Ranking 1 (market/degree relevance) and Ranking 2 (personal competitiveness), with the
-  `evidence_jsonb` explainability payload and the "My Fit" view from
-  [USER_WORKFLOWS.md](USER_WORKFLOWS.md).
+- Ranking 2 (personal competitiveness), with the `evidence_jsonb` explainability payload and the
+  "My Fit" view from [USER_WORKFLOWS.md](USER_WORKFLOWS.md).
 - Golden-fixture regression tests for scoring (see [TESTING_STRATEGY.md](TESTING_STRATEGY.md)).
 
 **Exit condition**: the user can look at a real posting and get a trustworthy, evidence-linked
 explanation of their fit.
 
-## Phase 4 — Save, track, act
+## Phase 4 — Save, track, act — **absorbed into Phase 2A.1**
 
-- Saved opportunities with pinned snapshots.
-- Application pipeline (status tracking).
-- Manual/suggested tasks and interview-prep notes.
-
-**Exit condition**: Workflows 4 and 6 in [USER_WORKFLOWS.md](USER_WORKFLOWS.md) work end to end —
-this is the point at which the MVP definition of done in [MVP_SCOPE.md](MVP_SCOPE.md) is mostly
-satisfied for the career-opportunity half of the product.
+Saved opportunities with pinned snapshots, the application pipeline, and interview-prep notes are
+no longer a separate later phase — per the personal-first priority in
+[MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority), they are part of Phase
+2A.1's exit condition directly, since a searchable-but-untrackable opportunity list is not yet a
+genuinely useful product. This phase number is kept (not renumbered away) so existing references
+and history stay traceable; there is no separate Phase 4 scope remaining. Workflows 4 and 6 in
+[USER_WORKFLOWS.md](USER_WORKFLOWS.md) now work end to end at Phase 2A.1.
 
 ## Phase 5 — Development opportunities
 
@@ -140,7 +178,8 @@ Candidates, not commitments, roughly in likely priority order:
 
 ## Explicit sequencing rules
 
-- Scoring (Phase 3) never starts before ingestion (Phase 2) produces real data — scoring logic
+- Ranking 1 (Phase 2A.2) never starts before ingestion (Phase 2A.1) produces real data, and
+  personal-competitiveness scoring (Phase 3) never starts before Ranking 1 exists — scoring logic
   built against imagined data tends to fit reality poorly.
 - No LLM-based feature is built before the deterministic scoring pipeline exists and passes its
   regression tests, per [ADR-005](adr/ADR-005-explainable-ranking-before-llm-ranking.md).
