@@ -131,6 +131,25 @@ async function rest(token, path, { method = 'GET', body, prefer } = {}) {
   return { ok: res.ok, status: res.status, data };
 }
 
+// Trusted, service-role-authenticated request -- used only to seed/tear down
+// the shared opportunity-domain fixture rows this suite needs (a real
+// browser session can never do this; see the "cannot forge" checks below).
+async function restAsService(path, { method = 'GET', body, prefer } = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    method,
+    headers: {
+      apikey: SECRET_KEY,
+      Authorization: `Bearer ${SECRET_KEY}`,
+      'Content-Type': 'application/json',
+      ...(prefer ? { Prefer: prefer } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  return { ok: res.ok, status: res.status, data };
+}
+
 let checkCount = 0;
 function check(description, condition) {
   checkCount += 1;
@@ -150,6 +169,8 @@ async function main() {
   const emailB = `it-test-b-${runId}@careeros.local`;
   let userA;
   let userB;
+  let seededSourceId;
+  let seededOpportunityId;
 
   try {
     // ---- setup: two temporary users via the trusted Admin API -----------
@@ -461,6 +482,111 @@ async function main() {
     });
     check('user B cannot delete user A\'s profile (browser DELETE is not granted)', !deleteAAsB.ok && deleteAAsB.status === 403);
 
+    // ---- Phase 2A.1: opportunities, applications, interview prep ---------
+    // Shared opportunity-domain rows are seeded directly via the service
+    // role (trusted, RLS-bypassing) -- exactly the kind of write the
+    // ingestion CLI performs, and exactly what the checks below confirm the
+    // browser role can never do itself.
+    const seededSource = await restAsService('/sources', {
+      method: 'POST',
+      body: { source_key: `greenhouse:api-test-${runId}`, adapter_kind: 'greenhouse', display_name: 'API Test Board', base_url: 'https://boards-api.greenhouse.io/v1/boards/api-test/jobs', enabled: true },
+      prefer: 'return=representation',
+    });
+    seededSourceId = seededSource.data?.[0]?.id;
+    const seededOpportunity = await restAsService('/opportunities', {
+      method: 'POST', body: { status: 'active' }, prefer: 'return=representation',
+    });
+    seededOpportunityId = seededOpportunity.data?.[0]?.id;
+    const seededListing = await restAsService('/source_listings', {
+      method: 'POST',
+      body: { source_id: seededSourceId, external_id: `job-${runId}`, canonical_source_url: `https://job-boards.greenhouse.io/api-test/jobs/${runId}`, application_url: `https://job-boards.greenhouse.io/api-test/jobs/${runId}`, opportunity_id: seededOpportunityId },
+      prefer: 'return=representation',
+    });
+    const seededListingId = seededListing.data?.[0]?.id;
+    const seededVersion = await restAsService('/opportunity_versions', {
+      method: 'POST',
+      body: { opportunity_id: seededOpportunityId, source_listing_id: seededListingId, version_number: 1, title: 'Integration Test Working Student Role', organization: 'API Test Co', description: 'Synthetic integration-test description.', location_text: 'Bremen, Germany', remote_mode: 'onsite', opportunity_kind: 'working_student', employment_type: 'internship', content_hash: `hash-${runId}` },
+      prefer: 'return=representation',
+    });
+    const seededVersionId = seededVersion.data?.[0]?.id;
+    const pinCurrentVersion = await restAsService(`/opportunities?id=eq.${seededOpportunityId}`, {
+      method: 'PATCH', body: { current_version_id: seededVersionId }, prefer: 'return=representation',
+    });
+    check('fixture setup: a shared opportunity with a current version is seeded via the trusted service role', seededSourceId && seededOpportunityId && seededListingId && seededVersionId && pinCurrentVersion.ok);
+
+    const readSharedOpportunity = await rest(tokenA, `/opportunity_search?opportunity_id=eq.${seededOpportunityId}`);
+    check('user A can read a shared opportunity through opportunity_search', readSharedOpportunity.ok && readSharedOpportunity.data.length === 1 && readSharedOpportunity.data[0].title === 'Integration Test Working Student Role');
+
+    const searchSharedOpportunity = await rest(tokenA, `/opportunity_search?organization=ilike.*API+Test*`);
+    check('user A can search/filter shared opportunities', searchSharedOpportunity.ok && searchSharedOpportunity.data.some((row) => row.opportunity_id === seededOpportunityId));
+
+    const forgeOpportunityInsert = await rest(tokenA, '/opportunities', {
+      method: 'POST', body: { status: 'active' },
+    });
+    check('the browser cannot forge a shared opportunity directly', !forgeOpportunityInsert.ok && forgeOpportunityInsert.status === 403);
+
+    const forgeVersionInsert = await rest(tokenA, '/opportunity_versions', {
+      method: 'POST',
+      body: { opportunity_id: seededOpportunityId, source_listing_id: seededListingId, version_number: 2, title: 'Forged', organization: 'Forged', description: 'Forged', remote_mode: 'onsite', opportunity_kind: 'other', employment_type: 'other', content_hash: 'forged' },
+    });
+    check('the browser cannot forge a shared opportunity version directly', !forgeVersionInsert.ok && forgeVersionInsert.status === 403);
+
+    const saveSharedOpportunity = await rest(tokenA, '/user_opportunity_state', {
+      method: 'POST',
+      body: { user_id: userA.id, opportunity_id: seededOpportunityId, saved_at: new Date().toISOString(), saved_opportunity_version_id: seededVersionId },
+      prefer: 'return=representation',
+    });
+    check('user A can save a shared opportunity, pinning the current version', saveSharedOpportunity.ok && saveSharedOpportunity.data[0].saved_opportunity_version_id === seededVersionId);
+
+    const hideSharedOpportunity = await rest(tokenA, `/user_opportunity_state?opportunity_id=eq.${seededOpportunityId}`, {
+      method: 'PATCH', body: { hidden_at: new Date().toISOString() }, prefer: 'return=representation',
+    });
+    check('user A can additionally hide a saved opportunity', hideSharedOpportunity.ok && hideSharedOpportunity.data[0].hidden_at !== null && hideSharedOpportunity.data[0].saved_at !== null);
+
+    const createManualOpportunity = await rest(tokenA, '/private_opportunities', {
+      method: 'POST',
+      body: { user_id: userA.id, source_url: 'https://jobs.fraunhofer.de/integration-test', title: 'Integration Test Manual Role', organization_name: 'Fraunhofer Integration Test', location_text: 'Bremen, Germany', opportunity_kind: 'research_assistant', employment_type: 'part_time' },
+      prefer: 'return=representation',
+    });
+    const manualOpportunityId = createManualOpportunity.data?.[0]?.id;
+    check('user A can create a manual opportunity for an unsupported source', createManualOpportunity.ok && manualOpportunityId);
+
+    const createSharedApplication = await rest(tokenA, '/applications', {
+      method: 'POST', body: { user_id: userA.id, opportunity_version_id: seededVersionId }, prefer: 'return=representation',
+    });
+    const sharedApplicationId = createSharedApplication.data?.[0]?.id;
+    check('user A can create an application pinned to a shared opportunity version', createSharedApplication.ok && createSharedApplication.data[0].opportunity_version_id === seededVersionId && createSharedApplication.data[0].status === 'preparing');
+
+    const createManualApplication = await rest(tokenA, '/applications', {
+      method: 'POST', body: { user_id: userA.id, private_opportunity_id: manualOpportunityId }, prefer: 'return=representation',
+    });
+    const manualApplicationId = createManualApplication.data?.[0]?.id;
+    check('user A can create an application from a manual-opportunity snapshot', createManualApplication.ok && manualApplicationId && createManualApplication.data[0].private_opportunity_snapshot?.title === 'Integration Test Manual Role');
+
+    const updateApplicationStatus = await rest(tokenA, `/applications?id=eq.${sharedApplicationId}`, {
+      method: 'PATCH', body: { status: 'applied' }, prefer: 'return=representation',
+    });
+    check('user A can update application status, and applied_at is set automatically', updateApplicationStatus.ok && updateApplicationStatus.data[0].status === 'applied' && updateApplicationStatus.data[0].applied_at !== null);
+
+    const forgePinnedVersionRewrite = await rest(tokenA, `/applications?id=eq.${sharedApplicationId}`, {
+      method: 'PATCH', body: { opportunity_version_id: seededVersionId },
+    });
+    check('user A cannot rewrite the pinned opportunity_version_id through the REST API', !forgePinnedVersionRewrite.ok && forgePinnedVersionRewrite.status === 403);
+
+    const addInterviewPrepNotes = await rest(tokenA, '/interview_prep_notes', {
+      method: 'POST', body: { application_id: sharedApplicationId, likely_questions: 'Tell me about a project you shipped.' }, prefer: 'return=representation',
+    });
+    check('user A can add interview prep notes, with user_id derived server-side', addInterviewPrepNotes.ok && addInterviewPrepNotes.data[0].user_id === userA.id);
+
+    const readApplicationsAAsB = await rest(tokenB, `/applications?user_id=eq.${userA.id}`);
+    check('user B cannot read user A\'s applications', readApplicationsAAsB.ok && readApplicationsAAsB.data.length === 0);
+
+    const readManualOpportunitiesAAsB = await rest(tokenB, `/private_opportunities?user_id=eq.${userA.id}`);
+    check('user B cannot read user A\'s manual opportunities', readManualOpportunitiesAAsB.ok && readManualOpportunitiesAAsB.data.length === 0);
+
+    const readInterviewPrepAAsB = await rest(tokenB, `/interview_prep_notes?application_id=eq.${sharedApplicationId}`);
+    check('user B cannot read user A\'s interview prep notes', readInterviewPrepAAsB.ok && readInterviewPrepAAsB.data.length === 0);
+
     console.log(`\nAll ${checkCount} checks passed.`);
   } finally {
     // ---- cleanup: attempted for every temporary user, always -------------
@@ -477,6 +603,32 @@ async function main() {
         cleanupErrors.push(...problems);
       } catch (err) {
         cleanupErrors.push(`failed to delete user ${user.id}: ${err.message}`);
+      }
+    }
+
+    // Shared opportunity-domain fixtures are cleaned up only after both
+    // users are gone -- applications reference opportunity_version_id with
+    // no ON DELETE action, so deleting the opportunity first (while an
+    // application still pointed at its version) would fail with a foreign
+    // key violation. Deleting `opportunities` cascades to its
+    // source_listings and opportunity_versions rows (both declared ON
+    // DELETE CASCADE), even though no role -- including service_role --
+    // holds a direct DELETE grant on opportunity_versions; a cascade delete
+    // is a referential action, not a separately grant-checked statement.
+    if (seededOpportunityId) {
+      try {
+        const deleteOpportunity = await restAsService(`/opportunities?id=eq.${seededOpportunityId}`, { method: 'DELETE', prefer: 'return=representation' });
+        if (!deleteOpportunity.ok) cleanupErrors.push(`failed to delete seeded opportunity ${seededOpportunityId}: HTTP ${deleteOpportunity.status}`);
+      } catch (err) {
+        cleanupErrors.push(`failed to delete seeded opportunity ${seededOpportunityId}: ${err.message}`);
+      }
+    }
+    if (seededSourceId) {
+      try {
+        const deleteSource = await restAsService(`/sources?id=eq.${seededSourceId}`, { method: 'DELETE', prefer: 'return=representation' });
+        if (!deleteSource.ok) cleanupErrors.push(`failed to delete seeded source ${seededSourceId}: HTTP ${deleteSource.status}`);
+      } catch (err) {
+        cleanupErrors.push(`failed to delete seeded source ${seededSourceId}: ${err.message}`);
       }
     }
 
