@@ -254,8 +254,15 @@ decision. None of them are implemented as adapters yet — Bosch and Continental
 highest-value target once the SmartRecruiters clarification (§3) is resolved; every other watchlist
 employer is manual-import-only pending its own custom-site terms review if one is ever undertaken.
 
-## 7. Source registry (implementation-time; none configured yet)
+## 7. Source registry (implementation-time)
 
-| Source | Category | Legal basis confirmed | Rate limit | Status |
+Populated at Phase 2A.1 implementation time. All three boards below were reviewed during the
+Phase 2A.0 research pass recorded in §3 above; enabling them for real ingestion in Phase 2A.1 is
+the repository owner's explicit, direct authorization (per §5's checklist item 13 / this document's
+§3 Greenhouse entry), not an automated or default-on decision.
+
+| `source_key` | Category | Legal basis confirmed | Rate limit | Status |
 |---|---|---|---|---|
-| *(none configured yet — this table is populated at Phase 2A.1 implementation time, one row per registered `sources` entry, `enabled = false` until manually verified)* | | | | |
+| `greenhouse:helsing` | Greenhouse Job Board API | See §3 Greenhouse entry above | No documented limit; CLI applies a conservative self-imposed interval/timeout regardless | `enabled = true` |
+| `greenhouse:marvelfusion` | Greenhouse Job Board API | See §3 Greenhouse entry above | Same as above | `enabled = true` |
+| `greenhouse:konux` | Greenhouse Job Board API | See §3 Greenhouse entry above | Same as above | `enabled = true` |
