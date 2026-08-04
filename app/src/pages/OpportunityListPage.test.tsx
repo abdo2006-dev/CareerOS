@@ -14,20 +14,15 @@ const privateList = vi.fn()
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ session: { user: { id: 'user-1' } } }),
 }))
-vi.mock('../lib/opportunityRepository', async () => {
-  const actual = await vi.importActual<
-    typeof import('../lib/opportunityRepository')
-  >('../lib/opportunityRepository')
-  return {
-    ...actual,
-    opportunityRepository: {
-      search: (...args: unknown[]) => search(...args),
-      listState: (...args: unknown[]) => listState(...args),
-      setSaved: (...args: unknown[]) => setSaved(...args),
-      setHidden: (...args: unknown[]) => setHidden(...args),
-    },
-  }
-})
+vi.mock('../lib/opportunityRepository', () => ({
+  PAGE_SIZE: 20,
+  opportunityRepository: {
+    search: (...args: unknown[]) => search(...args),
+    listState: (...args: unknown[]) => listState(...args),
+    setSaved: (...args: unknown[]) => setSaved(...args),
+    setHidden: (...args: unknown[]) => setHidden(...args),
+  },
+}))
 vi.mock('../lib/privateOpportunityRepository', () => ({
   privateOpportunityRepository: {
     list: (...args: unknown[]) => privateList(...args),
