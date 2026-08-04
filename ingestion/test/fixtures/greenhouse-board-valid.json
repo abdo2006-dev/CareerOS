@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "id": 1000001,
+      "title": "Working Student, Flight Software",
+      "absolute_url": "https://job-boards.greenhouse.io/synthetic-example/jobs/1000001",
+      "location": { "name": "Munich, Germany" },
+      "updated_at": "2026-07-01T09:00:00Z",
+      "first_published": "2026-06-15T09:00:00Z",
+      "application_deadline": "2026-09-01T00:00:00Z",
+      "company_name": "Synthetic Example GmbH",
+      "content": "<p>Support our <strong>autonomy team</strong> with flight software.</p><ul><li>Write C++</li><li>Review pull requests</li></ul>",
+      "departments": [{ "id": 1, "name": "Engineering" }],
+      "offices": [{ "id": 1, "name": "Munich" }]
+    },
+    {
+      "id": 1000002,
+      "title": "PhD Researcher, Applied Machine Learning",
+      "absolute_url": "https://job-boards.greenhouse.io/synthetic-example/jobs/1000002",
+      "location": { "name": "Remote - Germany" },
+      "updated_at": "2026-07-02T09:00:00Z",
+      "first_published": "2026-06-20T09:00:00Z",
+      "application_deadline": null,
+      "company_name": "Synthetic Example GmbH",
+      "content": "<p>Research applied ML for sensor fusion.</p>",
+      "departments": [{ "id": 2, "name": "Research" }],
+      "offices": []
+    }
+  ]
+}

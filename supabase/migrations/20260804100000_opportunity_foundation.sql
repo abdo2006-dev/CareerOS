@@ -95,7 +95,14 @@ create table public.opportunity_versions (
   constraint opportunity_versions_unique_version unique (opportunity_id, version_number),
   constraint opportunity_versions_title_check check (btrim(title) <> '' and char_length(title) <= 400),
   constraint opportunity_versions_organization_check check (btrim(organization) <> '' and char_length(organization) <= 200),
-  constraint opportunity_versions_description_check check (char_length(description) <= 20000),
+  -- 50000 (not the private_opportunities 20000 bound) because real Greenhouse
+  -- postings are observably much longer -- verified against a live board
+  -- during Phase 2A.1 development, where the 95th-percentile sanitized
+  -- description was well under this and only one pathological outlier
+  -- (~100KB) exceeded it, which is exactly the kind of single record the
+  -- per-record error-isolation design in INGESTION_ARCHITECTURE.md #4 exists
+  -- to skip without aborting the run.
+  constraint opportunity_versions_description_check check (char_length(description) <= 50000),
   constraint opportunity_versions_location_check check (location_text is null or char_length(location_text) <= 200),
   constraint opportunity_versions_remote_mode_check check (remote_mode in ('onsite', 'hybrid', 'remote', 'unknown')),
   constraint opportunity_versions_kind_check check (

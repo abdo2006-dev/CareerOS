@@ -142,17 +142,29 @@ export const opportunityRepository = {
     const existing = await this.getState(userId, opportunityId)
     if (existing.error) return existing
     if (saved) {
-      return supabase
-        .from('user_opportunity_state')
-        .upsert(
-          {
-            user_id: userId,
-            opportunity_id: opportunityId,
+      // Plain insert/update, never .upsert(): an ON CONFLICT DO UPDATE also
+      // needs UPDATE privilege on the conflict-key columns (user_id,
+      // opportunity_id), which are deliberately not browser-writable.
+      if (existing.data) {
+        return supabase
+          .from('user_opportunity_state')
+          .update({
             saved_at: new Date().toISOString(),
             saved_opportunity_version_id: opportunityVersionId,
-          },
-          { onConflict: 'user_id,opportunity_id' },
-        )
+          })
+          .eq('user_id', userId)
+          .eq('opportunity_id', opportunityId)
+          .select(stateColumns)
+          .maybeSingle<UserOpportunityStateRow>()
+      }
+      return supabase
+        .from('user_opportunity_state')
+        .insert({
+          user_id: userId,
+          opportunity_id: opportunityId,
+          saved_at: new Date().toISOString(),
+          saved_opportunity_version_id: opportunityVersionId,
+        })
         .select(stateColumns)
         .maybeSingle<UserOpportunityStateRow>()
     }
@@ -179,16 +191,22 @@ export const opportunityRepository = {
     const existing = await this.getState(userId, opportunityId)
     if (existing.error) return existing
     if (hidden) {
+      if (existing.data) {
+        return supabase
+          .from('user_opportunity_state')
+          .update({ hidden_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('opportunity_id', opportunityId)
+          .select(stateColumns)
+          .maybeSingle<UserOpportunityStateRow>()
+      }
       return supabase
         .from('user_opportunity_state')
-        .upsert(
-          {
-            user_id: userId,
-            opportunity_id: opportunityId,
-            hidden_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,opportunity_id' },
-        )
+        .insert({
+          user_id: userId,
+          opportunity_id: opportunityId,
+          hidden_at: new Date().toISOString(),
+        })
         .select(stateColumns)
         .maybeSingle<UserOpportunityStateRow>()
     }
