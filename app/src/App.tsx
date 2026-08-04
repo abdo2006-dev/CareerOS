@@ -19,6 +19,8 @@ import { OpportunityListPage } from './pages/OpportunityListPage'
 import { OpportunityDetailPage } from './pages/OpportunityDetailPage'
 import { PrivateOpportunityDetailPage } from './pages/PrivateOpportunityDetailPage'
 import { ManualOpportunityFormPage } from './pages/ManualOpportunityFormPage'
+import { ApplicationsListPage } from './pages/ApplicationsListPage'
+import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
 
 function AuthPending() {
   const { initError, loading, retryInit } = useAuth()
@@ -127,6 +129,11 @@ const router = createBrowserRouter([
           {
             path: '/opportunities/:opportunityId',
             element: <OpportunityDetailPage />,
+          },
+          { path: '/applications', element: <ApplicationsListPage /> },
+          {
+            path: '/applications/:applicationId',
+            element: <ApplicationDetailPage />,
           },
         ],
       },
