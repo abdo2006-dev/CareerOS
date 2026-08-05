@@ -94,6 +94,7 @@ export interface PrivateOpportunity {
 export interface Application {
   id: string
   user_id: string
+  shared_opportunity_id: string | null
   opportunity_version_id: string | null
   private_opportunity_id: string | null
   private_opportunity_snapshot: Record<string, unknown> | null

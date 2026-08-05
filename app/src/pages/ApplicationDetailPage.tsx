@@ -302,8 +302,10 @@ export function ApplicationDetailPage() {
       {opportunityId && (
         <p>
           <Link to={`/opportunities/${opportunityId}`}>
-            Open the pinned opportunity listing
-          </Link>
+            Open the current opportunity page
+          </Link>{' '}
+          (shows the latest listing content, not necessarily what you applied to
+          — see the pinned snapshot below)
         </p>
       )}
       {pinned?.applicationUrl && (

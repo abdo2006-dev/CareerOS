@@ -61,10 +61,7 @@ export function OpportunityDetailPage() {
 
     const [stateResult, appResult] = await Promise.all([
       opportunityRepository.getState(userId, opportunityId),
-      applicationRepository.getByOpportunityVersion(
-        userId,
-        result.data.opportunity_version_id,
-      ),
+      applicationRepository.getByOpportunity(userId, opportunityId),
     ])
     if (stateResult.error) {
       setStatus('error')
@@ -128,6 +125,16 @@ export function OpportunityDetailPage() {
       row.opportunity_version_id,
     )
     if (result.error) {
+      if (result.error.code === '23505') {
+        const existing = await applicationRepository.getByOpportunity(
+          userId,
+          row.opportunity_id,
+        )
+        if (existing.data) {
+          navigate(`/applications/${existing.data.id}`)
+          return
+        }
+      }
       setMessage(errorMessage(safeError(result.error)))
       setPending(false)
       return

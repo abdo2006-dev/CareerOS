@@ -692,6 +692,12 @@ create policy user_opportunity_state_delete_own on public.user_opportunity_state
 create table public.applications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (user_id) on delete cascade,
+  -- Stable identity for a shared application: survives new opportunity_versions
+  -- created by re-ingestion, unlike opportunity_version_id which pins the exact
+  -- content shown at application time. Always server-derived from
+  -- opportunity_version_id in applications_before_write -- the browser has no
+  -- write grant on this column at all.
+  shared_opportunity_id uuid references public.opportunities (id),
   opportunity_version_id uuid references public.opportunity_versions (id),
   private_opportunity_id uuid references public.private_opportunities (id) on delete set null,
   private_opportunity_snapshot jsonb,
@@ -705,9 +711,9 @@ create table public.applications (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint applications_source_check check (
-    (opportunity_version_id is not null and private_opportunity_id is null and private_opportunity_snapshot is null)
+    (opportunity_version_id is not null and shared_opportunity_id is not null and private_opportunity_id is null and private_opportunity_snapshot is null)
     or
-    (opportunity_version_id is null and private_opportunity_snapshot is not null)
+    (opportunity_version_id is null and shared_opportunity_id is null and private_opportunity_snapshot is not null)
   ),
   constraint applications_status_check check (
     status in (
@@ -726,10 +732,25 @@ comment on column public.applications.contact_note is
   'General recruiter/contact notes for this application. Interview-specific observations belong on interview_prep_notes instead.';
 comment on column public.applications.private_opportunity_snapshot is
   'Captured once at creation from private_opportunities. Never updated afterward, even if the source private_opportunities row is later edited or deleted.';
+comment on column public.applications.shared_opportunity_id is
+  'Stable shared-opportunity identity, derived server-side from opportunity_version_id and immutable thereafter. Lets a shared application remain associated with its opportunity (and keep showing as Applied) even after re-ingestion pins a new current_version_id -- unlike opportunity_version_id, which intentionally still points at the exact content shown when the user applied.';
 
 create index applications_user_idx on public.applications (user_id, status_updated_at desc);
 create index applications_opportunity_version_idx on public.applications (opportunity_version_id);
 create index applications_private_opportunity_idx on public.applications (private_opportunity_id);
+
+-- MVP behavior: at most one application tracker per user per listing. A
+-- second "start application" for the same shared opportunity or the same
+-- existing manual opportunity is rejected by this constraint; the UI is
+-- expected to look up and navigate to the existing application instead of
+-- attempting a duplicate insert. No application-attempt history/event
+-- sourcing is in scope.
+create unique index applications_user_shared_opportunity_uidx
+  on public.applications (user_id, shared_opportunity_id)
+  where shared_opportunity_id is not null;
+create unique index applications_user_private_opportunity_uidx
+  on public.applications (user_id, private_opportunity_id)
+  where private_opportunity_id is not null;
 
 create function public.applications_before_write()
 returns trigger
@@ -740,11 +761,26 @@ as $$
 declare
   v_private_owner uuid;
   v_snapshot jsonb;
+  v_shared_opportunity_id uuid;
 begin
   if tg_op = 'INSERT' then
     if (new.opportunity_version_id is not null) = (new.private_opportunity_id is not null) then
       raise exception using errcode = '23514',
         message = 'application must reference exactly one of opportunity_version_id or private_opportunity_id';
+    end if;
+
+    if new.opportunity_version_id is not null then
+      -- Never trust a browser-supplied shared_opportunity_id (there is no
+      -- write grant on it anyway) -- always derive the stable identity from
+      -- the pinned version itself.
+      select ov.opportunity_id into v_shared_opportunity_id
+      from public.opportunity_versions ov where ov.id = new.opportunity_version_id;
+      if v_shared_opportunity_id is null then
+        raise exception using errcode = 'P0002', message = 'unknown opportunity version';
+      end if;
+      new.shared_opportunity_id := v_shared_opportunity_id;
+    else
+      new.shared_opportunity_id := null;
     end if;
 
     if new.private_opportunity_id is not null then
@@ -789,6 +825,7 @@ begin
   new.user_id := old.user_id;
   new.created_at := old.created_at;
   new.opportunity_version_id := old.opportunity_version_id;
+  new.shared_opportunity_id := old.shared_opportunity_id;
   new.private_opportunity_snapshot := old.private_opportunity_snapshot;
 
   if new.private_opportunity_id is distinct from old.private_opportunity_id and new.private_opportunity_id is not null then

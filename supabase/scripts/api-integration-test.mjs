@@ -520,6 +520,9 @@ async function main() {
     const searchSharedOpportunity = await rest(tokenA, `/opportunity_search?organization=ilike.*API+Test*`);
     check('user A can search/filter shared opportunities', searchSharedOpportunity.ok && searchSharedOpportunity.data.some((row) => row.opportunity_id === seededOpportunityId));
 
+    const searchByLocationText = await rest(tokenA, `/opportunity_search?location_text=ilike.*Bremen*`);
+    check('user A can filter shared opportunities by location text (e.g. the Bremen preset)', searchByLocationText.ok && searchByLocationText.data.some((row) => row.opportunity_id === seededOpportunityId));
+
     const forgeOpportunityInsert = await rest(tokenA, '/opportunities', {
       method: 'POST', body: { status: 'active' },
     });
@@ -556,12 +559,29 @@ async function main() {
     });
     const sharedApplicationId = createSharedApplication.data?.[0]?.id;
     check('user A can create an application pinned to a shared opportunity version', createSharedApplication.ok && createSharedApplication.data[0].opportunity_version_id === seededVersionId && createSharedApplication.data[0].status === 'preparing');
+    check('the created application\'s shared_opportunity_id is derived server-side from the pinned version', createSharedApplication.data[0].shared_opportunity_id === seededOpportunityId);
+
+    const duplicateSharedApplication = await rest(tokenA, '/applications', {
+      method: 'POST', body: { user_id: userA.id, opportunity_version_id: seededVersionId },
+    });
+    check('starting a second application for the same shared opportunity is rejected as a duplicate', !duplicateSharedApplication.ok && duplicateSharedApplication.status === 409);
 
     const createManualApplication = await rest(tokenA, '/applications', {
       method: 'POST', body: { user_id: userA.id, private_opportunity_id: manualOpportunityId }, prefer: 'return=representation',
     });
     const manualApplicationId = createManualApplication.data?.[0]?.id;
     check('user A can create an application from a manual-opportunity snapshot', createManualApplication.ok && manualApplicationId && createManualApplication.data[0].private_opportunity_snapshot?.title === 'Integration Test Manual Role');
+
+    const duplicateManualApplication = await rest(tokenA, '/applications', {
+      method: 'POST', body: { user_id: userA.id, private_opportunity_id: manualOpportunityId },
+    });
+    check('starting a second application for the same existing manual opportunity is rejected as a duplicate', !duplicateManualApplication.ok && duplicateManualApplication.status === 409);
+
+    const correctManualSourceUrl = await rest(tokenA, `/private_opportunities?id=eq.${manualOpportunityId}`, {
+      method: 'PATCH', body: { source_url: 'https://jobs.fraunhofer.de/integration-test-corrected' }, prefer: 'return=representation',
+    });
+    const manualApplicationAfterUrlFix = await rest(tokenA, `/applications?id=eq.${manualApplicationId}`);
+    check('user A can correct a manual opportunity\'s source_url without altering the already-captured application snapshot', correctManualSourceUrl.ok && correctManualSourceUrl.data[0].source_url === 'https://jobs.fraunhofer.de/integration-test-corrected' && manualApplicationAfterUrlFix.data[0].private_opportunity_snapshot?.source_url === 'https://jobs.fraunhofer.de/integration-test');
 
     const updateApplicationStatus = await rest(tokenA, `/applications?id=eq.${sharedApplicationId}`, {
       method: 'PATCH', body: { status: 'applied' }, prefer: 'return=representation',
@@ -586,6 +606,28 @@ async function main() {
 
     const readInterviewPrepAAsB = await rest(tokenB, `/interview_prep_notes?application_id=eq.${sharedApplicationId}`);
     check('user B cannot read user A\'s interview prep notes', readInterviewPrepAAsB.ok && readInterviewPrepAAsB.data.length === 0);
+
+    // ---- regression: an application survives re-ingestion pinning a new
+    // current_version_id (the exact bug the independent review corrections
+    // fixed by adding applications.shared_opportunity_id) --------------------
+    const seededVersion2 = await restAsService('/opportunity_versions', {
+      method: 'POST',
+      body: { opportunity_id: seededOpportunityId, source_listing_id: seededListingId, version_number: 2, title: 'Integration Test Working Student Role (Updated)', organization: 'API Test Co', description: 'Synthetic integration-test description, updated.', location_text: 'Bremen, Germany', remote_mode: 'onsite', opportunity_kind: 'working_student', employment_type: 'internship', content_hash: `hash-${runId}-v2` },
+      prefer: 'return=representation',
+    });
+    const seededVersion2Id = seededVersion2.data?.[0]?.id;
+    const pinVersion2 = await restAsService(`/opportunities?id=eq.${seededOpportunityId}`, {
+      method: 'PATCH', body: { current_version_id: seededVersion2Id }, prefer: 'return=representation',
+    });
+    check('fixture setup: re-ingestion pins a new current_version_id for the same opportunity', Boolean(seededVersion2Id) && pinVersion2.ok);
+
+    const sharedApplicationAfterReingestion = await rest(tokenA, `/applications?id=eq.${sharedApplicationId}`);
+    check('the existing application still points at the original pinned version after re-ingestion, not the new current version', sharedApplicationAfterReingestion.ok && sharedApplicationAfterReingestion.data[0].opportunity_version_id === seededVersionId && sharedApplicationAfterReingestion.data[0].shared_opportunity_id === seededOpportunityId);
+
+    const duplicateAgainstNewVersion = await rest(tokenA, '/applications', {
+      method: 'POST', body: { user_id: userA.id, opportunity_version_id: seededVersion2Id },
+    });
+    check('starting a new application against the re-ingested version of the same opportunity is still rejected as a duplicate', !duplicateAgainstNewVersion.ok && duplicateAgainstNewVersion.status === 409);
 
     console.log(`\nAll ${checkCount} checks passed.`);
   } finally {

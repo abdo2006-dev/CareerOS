@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient'
 import type { Application, ApplicationStatus } from './opportunityTypes'
 
 const columns =
-  'id, user_id, opportunity_version_id, private_opportunity_id, private_opportunity_snapshot, status, applied_at, status_updated_at, next_action, next_action_due_at, notes, contact_note, created_at, updated_at'
+  'id, user_id, shared_opportunity_id, opportunity_version_id, private_opportunity_id, private_opportunity_snapshot, status, applied_at, status_updated_at, next_action, next_action_due_at, notes, contact_note, created_at, updated_at'
 
 export interface ApplicationFieldsInput {
   next_action?: string | null
@@ -29,12 +29,12 @@ export const applicationRepository = {
       .maybeSingle<Application>()
   },
 
-  async getByOpportunityVersion(userId: string, opportunityVersionId: string) {
+  async getByOpportunity(userId: string, sharedOpportunityId: string) {
     return supabase
       .from('applications')
       .select(columns)
       .eq('user_id', userId)
-      .eq('opportunity_version_id', opportunityVersionId)
+      .eq('shared_opportunity_id', sharedOpportunityId)
       .maybeSingle<Application>()
   },
 

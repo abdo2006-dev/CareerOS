@@ -9,7 +9,7 @@ const getState = vi.fn()
 const getVersion = vi.fn()
 const setSaved = vi.fn()
 const setHidden = vi.fn()
-const getByOpportunityVersion = vi.fn()
+const getByOpportunity = vi.fn()
 const createForOpportunity = vi.fn()
 const navigate = vi.fn()
 
@@ -32,8 +32,7 @@ vi.mock('../lib/opportunityRepository', () => ({
 }))
 vi.mock('../lib/applicationRepository', () => ({
   applicationRepository: {
-    getByOpportunityVersion: (...args: unknown[]) =>
-      getByOpportunityVersion(...args),
+    getByOpportunity: (...args: unknown[]) => getByOpportunity(...args),
     createForOpportunity: (...args: unknown[]) => createForOpportunity(...args),
   },
 }))
@@ -103,7 +102,7 @@ describe('OpportunityDetailPage', () => {
   it('renders full detail and a safe external link', async () => {
     get.mockResolvedValue({ data: row, error: null })
     getState.mockResolvedValue({ data: null, error: null })
-    getByOpportunityVersion.mockResolvedValue({ data: null, error: null })
+    getByOpportunity.mockResolvedValue({ data: null, error: null })
     renderPage()
     expect(
       await screen.findByRole('heading', {
@@ -121,7 +120,7 @@ describe('OpportunityDetailPage', () => {
   it('saves the opportunity, pinning the current version', async () => {
     get.mockResolvedValue({ data: row, error: null })
     getState.mockResolvedValue({ data: null, error: null })
-    getByOpportunityVersion.mockResolvedValue({ data: null, error: null })
+    getByOpportunity.mockResolvedValue({ data: null, error: null })
     setSaved.mockResolvedValue({ data: {}, error: null })
     const user = userEvent.setup()
     renderPage()
@@ -157,7 +156,7 @@ describe('OpportunityDetailPage', () => {
       },
       error: null,
     })
-    getByOpportunityVersion.mockResolvedValue({ data: null, error: null })
+    getByOpportunity.mockResolvedValue({ data: null, error: null })
     renderPage()
     expect(
       await screen.findByText(/source listing has changed since you saved it/i),
@@ -168,7 +167,7 @@ describe('OpportunityDetailPage', () => {
   it('starts an application and navigates to it', async () => {
     get.mockResolvedValue({ data: row, error: null })
     getState.mockResolvedValue({ data: null, error: null })
-    getByOpportunityVersion.mockResolvedValue({ data: null, error: null })
+    getByOpportunity.mockResolvedValue({ data: null, error: null })
     createForOpportunity.mockResolvedValue({
       data: { id: 'app-1' },
       error: null,
@@ -186,7 +185,7 @@ describe('OpportunityDetailPage', () => {
   it('shows a link to the existing application instead of "Start application" when one exists', async () => {
     get.mockResolvedValue({ data: row, error: null })
     getState.mockResolvedValue({ data: null, error: null })
-    getByOpportunityVersion.mockResolvedValue({
+    getByOpportunity.mockResolvedValue({
       data: { id: 'app-1' },
       error: null,
     })

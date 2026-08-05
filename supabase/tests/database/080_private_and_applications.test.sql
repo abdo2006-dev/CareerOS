@@ -3,7 +3,7 @@
 -- rules from AGENTS.md / docs/adr/ADR-018. All fixture data is synthetic
 -- and this transaction is rolled back.
 begin;
-select plan(55);
+select plan(64);
 
 -- Structure -----------------------------------------------------------------
 
@@ -141,11 +141,25 @@ select is(
   (select applied_at from public.applications where opportunity_version_id = :'shared_opportunity_version_id'::uuid),
   null::timestamptz, 'preparing has no applied_at yet'
 );
+select is(
+  (select shared_opportunity_id from public.applications where opportunity_version_id = :'shared_opportunity_version_id'::uuid),
+  :'shared_opportunity_id'::uuid,
+  'shared_opportunity_id is derived server-side from the pinned version, not client-supplied'
+);
+select throws_ok(
+  format($$ insert into public.applications (user_id, opportunity_version_id) values ('83000000-0000-0000-0000-000000000001', %L) $$, :'shared_opportunity_version_id'),
+  '23505'::char(5), null, 'starting a second application for the same shared opportunity is rejected as a duplicate'
+);
 
 select lives_ok(
   $$ insert into public.applications (user_id, private_opportunity_id, status)
      values ('83000000-0000-0000-0000-000000000001', (select id from public.private_opportunities where organization_name = 'Fraunhofer IWES'), 'applied') $$,
   'owner can start a manual application'
+);
+select throws_ok(
+  $$ insert into public.applications (user_id, private_opportunity_id)
+     values ('83000000-0000-0000-0000-000000000001', (select id from public.private_opportunities where organization_name = 'Fraunhofer IWES')) $$,
+  '23505'::char(5), null, 'starting a second application for the same existing manual opportunity is rejected as a duplicate'
 );
 select is(
   (select private_opportunity_snapshot ->> 'organization_name' from public.applications where private_opportunity_id = (select id from public.private_opportunities where organization_name = 'Fraunhofer IWES')),
@@ -174,6 +188,10 @@ select is(
 select throws_ok(
   format($$ update public.applications set opportunity_version_id = %L where opportunity_version_id = %L $$, :'shared_opportunity_version_id', :'shared_opportunity_version_id'),
   '42501'::char(5), null, 'the browser cannot rewrite the pinned opportunity_version_id'
+);
+select throws_ok(
+  format($$ update public.applications set shared_opportunity_id = %L where opportunity_version_id = %L $$, gen_random_uuid(), :'shared_opportunity_version_id'),
+  '42501'::char(5), null, 'the browser cannot rewrite the stable shared_opportunity_id either'
 );
 
 -- Status/applied_at/status_updated_at behavior -------------------------------
@@ -223,6 +241,48 @@ select lives_ok(
     :'shared_opportunity_version_id'
   ),
   'owner can update interview prep notes'
+);
+
+-- Regression: an application must stay stably associated with its shared
+-- opportunity across re-ingestion, even though re-ingestion pins a new
+-- current_version_id (see the independent-review corrections that added
+-- shared_opportunity_id).
+reset role;
+set role service_role;
+select public.begin_ingestion_run('greenhouse:helsing', false) as run_id \gset v2_
+select opportunity_id, opportunity_version_id from public.apply_source_listing(
+  'greenhouse:helsing', 'job-shared-1', 'https://job-boards.greenhouse.io/helsing/jobs/1', 'https://job-boards.greenhouse.io/helsing/jobs/1',
+  'Software Engineer Intern (Updated)', 'Helsing', 'Description, updated.', 'Munich, Germany', 'Germany', 'Bavaria', 'Munich',
+  'onsite', 'internship', 'internship', clock_timestamp(), null, clock_timestamp(), 'hash-2', '{}'::jsonb
+) \gset v2_
+select public.finalize_ingestion_run(:'v2_run_id', 'complete', 1, 0, 1, 0, '[]'::jsonb);
+
+reset role;
+select set_config('request.jwt.claims', json_build_object('sub', '83000000-0000-0000-0000-000000000001', 'role', 'authenticated')::text, true);
+set role authenticated;
+
+select isnt(
+  :'v2_opportunity_version_id'::uuid, :'shared_opportunity_version_id'::uuid,
+  'sanity check: re-ingestion produced a new opportunity_version'
+);
+select is(
+  (select current_version_id from public.opportunities where id = :'shared_opportunity_id'::uuid),
+  :'v2_opportunity_version_id'::uuid,
+  'the opportunity''s current_version_id advances to the new version'
+);
+select is(
+  (select opportunity_version_id from public.applications where shared_opportunity_id = :'shared_opportunity_id'::uuid),
+  :'shared_opportunity_version_id'::uuid,
+  'the existing application keeps pointing at the original (version 1) pinned snapshot, not the new current version'
+);
+select is(
+  (select count(*)::int from public.applications where shared_opportunity_id = :'shared_opportunity_id'::uuid),
+  1,
+  'the opportunity still has exactly one application after re-ingestion -- it is found by stable identity, not by version'
+);
+select throws_ok(
+  format($$ insert into public.applications (user_id, opportunity_version_id) values ('83000000-0000-0000-0000-000000000001', %L) $$, :'v2_opportunity_version_id'),
+  '23505'::char(5), null, 'starting a new application against the new version of the same opportunity is still rejected as a duplicate, proving the detail page must key off shared_opportunity_id rather than opportunity_version_id'
 );
 
 -- Cross-user isolation --------------------------------------------------
