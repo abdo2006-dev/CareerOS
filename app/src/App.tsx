@@ -6,6 +6,7 @@ import {
 } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AppLayout } from './pages/AppLayout'
 import { ProfileLayout } from './pages/ProfileLayout'
 import { BasicProfilePage } from './pages/BasicProfilePage'
 import { EducationEditorPage } from './pages/EducationEditorPage'
@@ -14,6 +15,12 @@ import { ExperienceEditorPage } from './pages/ExperienceEditorPage'
 import { ExperienceListPage } from './pages/ExperienceListPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { SignInPage } from './pages/SignInPage'
+import { OpportunityListPage } from './pages/OpportunityListPage'
+import { OpportunityDetailPage } from './pages/OpportunityDetailPage'
+import { PrivateOpportunityDetailPage } from './pages/PrivateOpportunityDetailPage'
+import { ManualOpportunityFormPage } from './pages/ManualOpportunityFormPage'
+import { ApplicationsListPage } from './pages/ApplicationsListPage'
+import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
 
 function AuthPending() {
   const { initError, loading, retryInit } = useAuth()
@@ -88,22 +95,45 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [
       {
-        path: '/profile',
-        element: <ProfileLayout />,
+        element: <AppLayout />,
         children: [
-          { index: true, element: <ProfilePage /> },
-          { path: 'basic', element: <BasicProfilePage /> },
-          { path: 'education', element: <EducationListPage /> },
-          { path: 'education/new', element: <EducationEditorPage /> },
           {
-            path: 'education/:educationId/edit',
-            element: <EducationEditorPage />,
+            path: '/profile',
+            element: <ProfileLayout />,
+            children: [
+              { index: true, element: <ProfilePage /> },
+              { path: 'basic', element: <BasicProfilePage /> },
+              { path: 'education', element: <EducationListPage /> },
+              { path: 'education/new', element: <EducationEditorPage /> },
+              {
+                path: 'education/:educationId/edit',
+                element: <EducationEditorPage />,
+              },
+              { path: 'experience', element: <ExperienceListPage /> },
+              { path: 'experience/new', element: <ExperienceEditorPage /> },
+              {
+                path: 'experience/:experienceId/edit',
+                element: <ExperienceEditorPage />,
+              },
+            ],
           },
-          { path: 'experience', element: <ExperienceListPage /> },
-          { path: 'experience/new', element: <ExperienceEditorPage /> },
+          { path: '/opportunities', element: <OpportunityListPage /> },
           {
-            path: 'experience/:experienceId/edit',
-            element: <ExperienceEditorPage />,
+            path: '/opportunities/import',
+            element: <ManualOpportunityFormPage />,
+          },
+          {
+            path: '/opportunities/manual/:privateOpportunityId',
+            element: <PrivateOpportunityDetailPage />,
+          },
+          {
+            path: '/opportunities/:opportunityId',
+            element: <OpportunityDetailPage />,
+          },
+          { path: '/applications', element: <ApplicationsListPage /> },
+          {
+            path: '/applications/:applicationId',
+            element: <ApplicationDetailPage />,
           },
         ],
       },

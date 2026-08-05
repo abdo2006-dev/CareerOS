@@ -1,0 +1,16 @@
+{
+  "jobs": [
+    {
+      "id": 3000001,
+      "title": "Working Student, Security",
+      "absolute_url": "https://job-boards.greenhouse.io/synthetic-example/jobs/3000001",
+      "location": { "name": "Hamburg, Germany" },
+      "updated_at": "2026-07-01T09:00:00Z",
+      "first_published": "2026-06-15T09:00:00Z",
+      "company_name": "Synthetic Example GmbH",
+      "content": "<p onclick=\"alert(1)\">Hello <script>alert('xss')</script>and<style>body{color:red}</style> welcome.</p><img src=\"https://tracker.example/pixel.gif\"><a href=\"javascript:alert(2)\">bad link</a><a href=\"https://example.test/apply\">apply</a><iframe src=\"https://evil.example\"></iframe>",
+      "departments": [],
+      "offices": []
+    }
+  ]
+}

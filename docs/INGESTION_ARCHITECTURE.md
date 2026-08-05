@@ -1,19 +1,26 @@
 # Ingestion Architecture
 
-Status: **proposal** — the architecture new source adapters and the local ingestion CLI must
-follow, per [ADR-004](adr/ADR-004-source-adapter-architecture.md) (adapter interface),
+Status: **implemented (Phase 2A.1)** for the Greenhouse adapter described below, per
+[ADR-004](adr/ADR-004-source-adapter-architecture.md) (adapter interface),
 [ADR-016](adr/ADR-016-typescript-ingestion-runtime.md) (TypeScript runtime),
 [ADR-017](adr/ADR-017-local-first-ingestion-execution.md) (local-first execution), and
-[ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) (identity/dedup). No
-code exists yet — this document governs Phase 2A.1's implementation, not a description of
-something already built.
+[ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) (identity/dedup, with
+the Phase 2A.1 single-adapter scope note recorded in
+[DATA_MODEL.md](DATA_MODEL.md#opportunity-identity-domain-sharedglobal-service-role-write)).
 
 ## 1. What exists today
 
-Nothing. `ingestion/` contains only a placeholder `README.md`. This document, together with the
-ADRs above and [DATA_SOURCES_AND_COMPLIANCE.md](DATA_SOURCES_AND_COMPLIANCE.md), is the design that
-Phase 2A.1 (schema, first adapter, and local CLI, shipped together — see
-[DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md)) implements against.
+`ingestion/` is an independent Node/TypeScript project implementing the Greenhouse adapter end to
+end: fetch (with retry/timeout/response-size cap), a hand-written parser, HTML-entity-decode +
+sanitize + plain-text normalization, deterministic content hashing, and a CLI (`ingest --source
+greenhouse [--board <token>] [--dry-run]`). All shared-domain writes go through the three trusted
+Postgres functions from the Phase 2A.1 migration (`begin_ingestion_run`, `apply_source_listing`,
+`finalize_ingestion_run`) rather than direct table access, so the pipeline described below is
+implemented as thin orchestration around those functions, not as separate upsert/versioning logic
+in TypeScript. `--dry-run` performs zero writes: it fetches, parses, normalizes, sanitizes, hashes,
+and compares against current database state via read-only queries, then reports what it would do,
+without calling any of the three trusted functions. Verified against the real, live Greenhouse API
+for all three reviewed boards (`helsing`, `marvelfusion`, `konux`) during Phase 2A.1 development.
 
 ## 2. Repository shape
 
@@ -25,16 +32,31 @@ Postgres schema is the contract between them (see [ADR-016](adr/ADR-016-typescri
 ```
 ingestion/
   src/
-    adapters/           one module per adapter (e.g. greenhouse.ts)
-    orchestrator.ts      shared fetch -> normalize -> identify -> upsert -> closure pipeline
-    sanitize.ts          HTML sanitization (sanitize-html) + plain-text derivation
-    identity.ts           URL normalization, content hashing
-    cli.ts                entry point: `ingest`, `score` subcommands
+    adapters/
+      types.ts            shared NormalizedListing/SourceRow types
+      greenhouse.ts        fetch, parse, classify, normalize for the Greenhouse Job Board API
+    orchestrator.ts        dry-run comparison + real apply/finalize pipeline, thin around the
+                            trusted RPCs -- no separate upsert/versioning logic here
+    sanitize.ts             entity-decode-once + sanitize-html allowlist + plain-text derivation
+    identity.ts              URL normalization, deterministic content hashing
+    httpRetry.ts              429/5xx/network retry with backoff, honors Retry-After
+    env.ts, db.ts              trusted service-role credential loading (loopback-only by default)
+    cli.ts                     entry point: `ingest --source greenhouse [--board] [--dry-run]`
   test/
-    fixtures/             synthetic, public-safe recorded-shape fixtures (never real raw responses)
+    fixtures/                  synthetic, public-safe recorded-shape fixtures (never a real
+                                captured response verbatim)
+    adapters/greenhouse.test.ts, orchestrator.test.ts, sanitize.test.ts, identity.test.ts
   package.json
   tsconfig.json
 ```
+
+Implemented scope note: no `score` subcommand exists (deterministic market-relevance scoring is
+Phase 2A.2, out of scope here) and there is no per-adapter `identify()` method as a separate
+interface method -- the Greenhouse adapter's identity fields (external ID, canonical/application
+URL) are produced directly as part of `normalizeGreenhouseJob`, since a single adapter's identity
+extraction is simple enough not to warrant a separate formal interface abstraction yet (see
+[AGENTS.md](../AGENTS.md) on avoiding premature abstraction). The interface below remains the
+target shape to converge on if and when a second adapter is added.
 
 ## 3. Source-adapter interface (per ADR-004)
 

@@ -1,0 +1,21 @@
+{
+  "jobs": [
+    {
+      "id": 2000001,
+      "title": "Working Student, Backend",
+      "absolute_url": "https://job-boards.greenhouse.io/synthetic-example/jobs/2000001",
+      "location": { "name": "Bremen, Germany" },
+      "updated_at": "2026-07-01T09:00:00Z",
+      "first_published": "2026-06-15T09:00:00Z",
+      "company_name": "Synthetic Example GmbH",
+      "content": "<p>Backend work in Bremen.</p>",
+      "departments": [],
+      "offices": []
+    },
+    {
+      "title": "Missing an id field entirely",
+      "absolute_url": "https://job-boards.greenhouse.io/synthetic-example/jobs/2000002",
+      "content": "<p>This record is intentionally malformed.</p>"
+    }
+  ]
+}

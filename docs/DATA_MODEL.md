@@ -184,19 +184,35 @@ versions** carrying the actual historical content. See
 [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md) for the full
 reasoning.
 
+**Implementation status and scope note (Phase 2A.1)**: with exactly one adapter (Greenhouse)
+enabled, cross-source deduplication — `potential_duplicate_links`, the strong/weak-match linking
+rule, `link_confidence`, `opportunities.merged_into_opportunity_id` — is **not implemented**. There
+is no second source that could ever produce a match, so that code would be unexercised and
+untestable. `source_listings.opportunity_id` is therefore `not null` (one listing maps to exactly
+one opportunity today, a simplification of the table below). Revisit when a second adapter is
+proposed, per ADR-010's own scope note. All writes to this domain go through three narrow,
+trusted-only Postgres functions (`begin_ingestion_run`, `apply_source_listing`,
+`finalize_ingestion_run`) rather than direct table grants — see
+[RLS_POLICY_MATRIX.md](RLS_POLICY_MATRIX.md).
+
 | Table | Key fields | Notes |
 |---|---|---|
-| `sources` | `id`, `name`, `adapter_key`, `base_url`, `legal_basis_notes`, `rate_limit_config`, `enabled` | Registry of configured adapters; see [ADR-004](adr/ADR-004-source-adapter-architecture.md) |
-| `source_listings` | `id`, `source_id`, `external_id`, `canonical_source_url`, `first_seen_at`, `last_seen_at`, `status` (`active`\|`removed`), `opportunity_id` (FK, nullable until linked), `link_confidence` (`exact`\|`strong_deterministic`\|`needs_review`\|`unlinked`) | One row per (source, external_id) — this is what an adapter actually observed. Never holds descriptive content itself; content lives in `opportunity_versions` |
-| `opportunities` | `id`, `status` (`active`\|`removed`\|`needs_review`\|`merged_duplicate`), `first_discovered_at`, `last_checked_at`, `current_version_id`, `merged_into_opportunity_id` (nullable, set only when `status = merged_duplicate`) | The **canonical, real-world opportunity**. Holds identity, lifecycle, and timestamps only — no descriptive content. One or more `source_listings` may point to the same `opportunities` row |
-| `opportunity_versions` | see full field list below | Immutable historical snapshot. Tied to the specific `source_listing_id` whose capture produced it, and to the canonical `opportunity_id` |
-| `potential_duplicate_links` | `id`, `opportunity_id_a`, `opportunity_id_b`, `match_basis_jsonb`, `match_confidence`, `status` (`pending_review`\|`confirmed_duplicate`\|`rejected`), `created_at`, `reviewed_at` | Uncertain cross-source matches that were **not** auto-merged; see dedup rules below |
-| `ingestion_runs` | `id`, `source_id`, `started_at`, `finished_at`, `status`, `records_found`, `records_new`, `records_updated`, `records_removed`, `error_summary` | Operational log, also drives [OBSERVABILITY.md](OBSERVABILITY.md) |
+| `sources` | `id`, `source_key` (unique, e.g. `greenhouse:helsing`), `adapter_kind` (non-unique, e.g. `greenhouse`), `display_name`, `base_url`, `enabled` | Registry of configured, reviewed adapters/boards; see [ADR-004](adr/ADR-004-source-adapter-architecture.md). `source_key` and `adapter_kind` are deliberately distinct: a single adapter serves multiple boards, each its own `source_key` |
+| `source_listings` | `id`, `source_id`, `external_id`, `canonical_source_url`, `application_url`, `first_seen_at`, `last_seen_at`, `status` (`active`\|`removed`), `absence_count`, `opportunity_id` (FK, not null) | One row per (source, external_id) — this is what an adapter actually observed. Never holds descriptive content itself; content lives in `opportunity_versions` |
+| `opportunities` | `id`, `status` (`active`\|`stale`\|`closed`\|`unknown`), `first_discovered_at`, `last_checked_at`, `current_version_id` | The **canonical, real-world opportunity**. Holds identity, lifecycle, and timestamps only — no descriptive content |
+| `opportunity_versions` | see full field list below | Immutable historical snapshot. Tied to the specific `source_listing_id` whose capture produced it, and to the canonical `opportunity_id`. Insert-only at the grant level for every role, including service_role |
+| `ingestion_runs` | `id`, `source_id`, `started_at`, `finished_at`, `status` (`running`\|`complete`\|`partial`\|`failed`), `completeness` (`complete`\|`partial`, null while running/failed), `dry_run`, `records_found`, `records_new`, `records_updated`, `records_closed`, `error_count`, `error_summary` (jsonb, capped) | Operational log, one row per CLI invocation |
+| `opportunity_search` (view) | `opportunity_id`, `opportunity_version_id`, `lifecycle_status`, `first_discovered_at`, `last_checked_at`, `source_id`, `source_key`, `source_display_name`, `source_listing_id`, `canonical_source_url`, `title`, `organization`, `description`, `location_text`, `country`, `region`, `city`, `opportunity_kind`, `employment_type`, `remote_mode`, `posted_at`, `application_deadline`, `application_url`, `version_captured_at` | Read model for browsing: one row per opportunity, joined to its current version and provenance. Browser SELECT-only |
 
-### `opportunity_versions` — complete field list
+### `opportunity_versions` — implemented field list
 
 Every mutable, historically-meaningful fact about a posting lives here, never only on the stable
-`opportunities` row:
+`opportunities` row. Phase 2A.1 implements a practical subset of the originally sketched field
+list — no `category`/`subtype`/career-or-development-specific JSONB (that taxonomy exists to drive
+Ranking 1/2, out of scope here — see [OPPORTUNITY_TAXONOMY.md](OPPORTUNITY_TAXONOMY.md)), no
+separate `sanitized_display_content` (the single `description` field is already the sanitized,
+render-safe text), no `responsibilities`/`required_qualifications`/`preferred_qualifications` split
+(folded into `description`), no `parser_version`/`normalizer_version`:
 
 | Field | Purpose |
 |---|---|
@@ -205,30 +221,18 @@ Every mutable, historically-meaningful fact about a posting lives here, never on
 | `source_listing_id` | Which source listing's capture produced this version (provenance) |
 | `version_number` | Sequential per opportunity |
 | `captured_at` | When this snapshot was taken |
-| `title` | |
-| `organization` | Company/institution name |
-| `description` | Normalized, sanitized plain-text/limited-markup body |
-| `responsibilities` | Structured or free-text, source-dependent |
-| `required_qualifications` | |
-| `preferred_qualifications` | |
-| `location` | |
-| `remote_status` | `onsite` \| `hybrid` \| `remote` |
-| `deadline` | Nullable — many postings don't state one |
+| `title`, `organization`, `description` | Sanitized plain text |
+| `location_text`, `country`, `region`, `city` | |
+| `remote_mode` | `onsite` \| `hybrid` \| `remote` \| `unknown` |
+| `opportunity_kind` | Practical trimmed enum: `internship`, `working_student`, `graduate_program`, `entry_level`, `research_assistant`, `phd`, `scholarship`, `hackathon`, `fellowship`, `other` — shared with `private_opportunities` |
+| `employment_type` | `full_time`, `part_time`, `contract`, `temporary`, `internship`, `volunteer`, `other` — shared with `private_opportunities` |
 | `application_url` | The URL to actually apply, which may differ from `source_listings.canonical_source_url` |
-| `category` | `career` \| `development` — versioned because a posting's classification can be corrected between captures |
-| `subtype` | e.g. `internship`, `hackathon` — versioned for the same reason |
-| `career_specific_fields` | JSONB: employment type, duration, compensation notes, etc. — only populated when `category = career` |
-| `development_specific_fields` | JSONB: cost, time commitment, produces-artifact flag, event dates, etc. — only populated when `category = development` |
-| `sanitized_display_content` | The exact sanitized content the frontend is permitted to render (see [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md)); kept distinct from `description` so rendering and scoring can evolve independently |
-| `source_metadata` | JSONB: source-specific fields not mapped into the common schema, retained for future remapping/debugging — sanitized, never raw HTML (see §"Raw external-content retention" below) |
+| `posted_at`, `application_deadline`, `source_updated_at` | Nullable — not every source states these |
 | `content_hash` | Used for idempotent change detection |
-| `parser_version` | Which adapter/normalizer code version produced this version |
-| `normalizer_version` | Same purpose, for the shared normalization step, when it differs from the adapter's own version |
+| `source_metadata` | JSONB, bounded (≤ 8 KB): source-specific fields not mapped into the common schema — sanitized, never raw HTML (see §"Raw external-content retention" below) |
 
-`opportunities.current_version_id` always points at the version currently treated as the
-"live" content for that opportunity (ordinarily the latest by `captured_at`, but see the
-duplicate-resolution note in [ADR-010](adr/ADR-010-opportunity-identity-and-cross-source-deduplication.md)
-for how this is chosen when multiple source listings feed one opportunity).
+`opportunities.current_version_id` always points at the version currently treated as the "live"
+content for that opportunity — the latest by `version_number`, set by `apply_source_listing`.
 
 ## Scoring domain (shared source data, but scores are computed per user where applicable)
 
@@ -252,13 +256,18 @@ distinct, timestamped event, not a mutation of the number the user already saw.
 
 ## User activity domain (user-owned, RLS-protected)
 
+**Implementation status (Phase 2A.1)**: `user_opportunity_state`, `applications`, `interview_prep_notes`,
+and `private_opportunities` are implemented. `tasks` remains a logical target only — MVP_SCOPE.md's
+"simple tasks associated with opportunities" is satisfied at Phase 2A.1 by `applications.next_action`/
+`next_action_due_at` directly; a standalone `tasks` table (including deadline-derived tasks that exist
+before any application) is deferred to a later pass.
+
 | Table | Key fields | Notes |
 |---|---|---|
-| `saved_opportunities` | `id`, `user_id`, `opportunity_id`, `saved_opportunity_version_id`, `notes`, `saved_at` | Snapshot pinning: even if the opportunity gets new versions later, this remembers which version — and, transitively via that version's `source_listing_id`, which source content — the user actually saved and reacted to |
-| `applications` | `id`, `user_id`, `saved_opportunity_id` (nullable FK to `saved_opportunities`, set for a shared/ingested opportunity), `private_opportunity_id` (nullable FK to `private_opportunities`, set for a manually entered one — exactly one of the two is set), `private_opportunity_snapshot_jsonb` (populated only when `private_opportunity_id` is set — see note below), `status` (`preparing`\|`applied`\|`awaiting_response`\|`interview_scheduled`\|`interview_complete`\|`offer`\|`accepted`\|`rejected`\|`withdrawn`\|`closed`), `applied_at`, `status_updated_at`, `next_action` (nullable), `next_action_due_at` (nullable), `notes`, `contact_note` (nullable), `resume_id_used` | Current status plus timestamps only — no event-sourced status-history table at MVP (see [MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority)); "saved" is a state prior to and outside this enum, held on `saved_opportunities`/`private_opportunities` |
-| `tasks` | `id`, `user_id`, `application_id` (nullable), `opportunity_id` (nullable), `title`, `due_date`, `status` (`open`\|`done`), `origin` (`manual`\|`suggested`) | Deadline-derived tasks reference the opportunity directly even before an application exists |
-| `interview_prep_notes` | `id`, `application_id`, `content`, `created_at` | Free-text notes tied to the application — likely questions, topics to revise, recruiter notes, post-interview reflections all fit in `content`; no structured sub-fields at MVP |
-| `private_opportunities` | `id`, `user_id`, `source_url`, `title`, `organization_name`, `location_text`, `opportunity_kind`, `employment_type`, `remote_mode`, `description_text`, `posted_at`, `application_deadline`, `application_url`, `dismissed_at`, `promoted_to_opportunity_id` (nullable, trusted-write only), `created_at`, `updated_at`, `last_confirmed_at` | **New (Phase 2A, see [ADR-018](adr/ADR-018-private-manual-opportunities.md))**: manually entered opportunities, structurally and permission-wise separate from the shared identity domain above — not written through the ingestion/dedup pipeline, not versioned like `opportunity_versions` (ordinary mutable CRUD, like `work_experience`), private by default. `promoted_to_opportunity_id` is a future, trusted-only, additive link to a canonical shared opportunity if one is later discovered by an adapter; no promotion logic exists yet. Exact column types/constraints are finalized at Phase 2A.1 implementation time |
+| `user_opportunity_state` | `id`, `user_id`, `opportunity_id`, `saved_at` (nullable), `saved_opportunity_version_id` (nullable, set exactly when `saved_at` is), `hidden_at` (nullable), `notes`, `created_at`, `updated_at` | **Implemented name for what an earlier draft of this document called `saved_opportunities`** — resolved to the name [ADR-018](adr/ADR-018-private-manual-opportunities.md) itself uses when contrasting this table with `private_opportunities.dismissed_at`. One row per `(user_id, opportunity_id)`; a "neither saved nor hidden" state has no row at all (unsave+unhide deletes it). Applies only to shared `opportunities` — a private manual opportunity's existence already means it's saved, and `dismissed_at` is its hide equivalent. Snapshot pinning: `saved_opportunity_version_id` remembers which version the user actually saved and reacted to, even after the opportunity gets new versions later |
+| `applications` | `id`, `user_id`, `shared_opportunity_id` (nullable FK to `opportunities`, set and immutable for a shared application — see note below), `opportunity_version_id` (nullable FK to `opportunity_versions`, set and pinned for a shared/ingested opportunity), `private_opportunity_id` (nullable FK to `private_opportunities`, `on delete set null`, set for a manually entered one), `private_opportunity_snapshot` (jsonb, populated only on the manual path — see note below), `status` (`preparing`\|`applied`\|`awaiting_response`\|`interview_scheduled`\|`interview_complete`\|`offer`\|`accepted`\|`rejected`\|`withdrawn`\|`closed`), `applied_at`, `status_updated_at`, `next_action` (nullable), `next_action_due_at` (nullable), `notes`, `contact_note` (nullable) | Current status plus timestamps only — no event-sourced status-history table at MVP (see [MVP_SCOPE.md](MVP_SCOPE.md#current-product-mode-and-engineering-priority)). Exactly one of `opportunity_version_id`/`private_opportunity_snapshot` is set, enforced by both a check constraint and a trigger; the browser has no update grant on either, or on `user_id`/`created_at`, so the pinned source is immutable after creation. A partial unique index on `(user_id, shared_opportunity_id)` (and separately on `(user_id, private_opportunity_id)`) caps the MVP at one application tracker per user per listing — no application-attempt history/event sourcing. `contact_note` holds general recruiter/contact notes; interview-specific observations live on `interview_prep_notes` instead, to avoid two fields with the same purpose. `status_updated_at` advances only when `status` actually changes; an ordinary note edit only advances `updated_at` |
+| `interview_prep_notes` | `id`, `application_id` (unique — one row per application), `user_id` (denormalized, server-derived from the application's owner, never client-supplied), `responsibilities_to_discuss`, `required_technologies`, `topics_to_revise`, `likely_questions`, `questions_to_ask`, `interview_date`, `interview_format`, `reflections`, `created_at`, `updated_at` | Plain-text fields, not a single freeform blob, so the pinned listing snapshot and the prep notes can be shown side by side without parsing. No recruiter/contact-note field here — that lives on `applications.contact_note` |
+| `private_opportunities` | `id`, `user_id`, `source_url`, `title`, `organization_name`, `location_text`, `opportunity_kind`, `employment_type`, `remote_mode`, `description_text`, `posted_at`, `application_deadline`, `application_url`, `dismissed_at`, `promoted_to_opportunity_id` (nullable, trusted-write only), `created_at`, `updated_at`, `last_confirmed_at` | **Implemented (Phase 2A.1, see [ADR-018](adr/ADR-018-private-manual-opportunities.md))**: manually entered opportunities, structurally and permission-wise separate from the shared identity domain above — not written through the ingestion/dedup pipeline, not versioned like `opportunity_versions` (ordinary mutable CRUD, like `work_experience`), private by default. `opportunity_kind`/`employment_type`/`remote_mode` use the same practical enums as `opportunity_versions` (see the note below). `source_url` is ordinary mutable owner-corrected metadata (browser has an update grant on it, unlike the shared domain's provenance columns) — correcting it never touches an already-captured `applications.private_opportunity_snapshot`, which is a one-time copy taken at application creation and never re-read live. `promoted_to_opportunity_id` is a future, trusted-only, additive link to a canonical shared opportunity if one is later discovered by an adapter; no promotion logic exists yet |
 
 ## Raw external-content retention (debug-only, not a core table)
 
@@ -280,6 +289,17 @@ entirely to `opportunity_versions`).
   latest": a user's saved reasoning and fit explanation refer to the posting as it existed when
   they looked at it. If requirements change later, the user should see that explicitly as a diff,
   not have their prior judgment silently reinterpreted against new text.
+- **Why a shared `applications` row carries both `shared_opportunity_id` and `opportunity_version_id`**,
+  rather than deriving "which opportunity is this?" from the pinned version alone: the two answer
+  different questions. `opportunity_version_id` must stay pinned to the exact content shown when the
+  user applied, even after `ingestion` creates newer versions — that immutability is the whole point
+  of the pinned-snapshot design above. But that same immutability means it cannot also answer "is
+  this opportunity already applied to?" after a new version becomes current, because the opportunity's
+  *current* version and the applications's *pinned* version are now different rows. `shared_opportunity_id`
+  is a second, stable FK straight to `opportunities`, derived server-side from `opportunity_version_id`
+  at insert time (never client-supplied, never rewritten) purely so the "already applied" check, the
+  duplicate-prevention unique index, and the opportunity list's "Applied" badge can all key off an
+  identity that survives re-ingestion, while `opportunity_version_id` keeps doing its original job.
 - **Why `applications` carries its own `private_opportunity_snapshot_jsonb`** rather than reading
   `private_opportunities` live: a shared opportunity already gets this guarantee for free through
   `saved_opportunities.saved_opportunity_version_id` pointing at an immutable
