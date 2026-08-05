@@ -20,10 +20,7 @@ export type PrivateOpportunityInput = {
   application_url: string | null
 }
 
-export type PrivateOpportunityUpdate = Omit<
-  PrivateOpportunityInput,
-  'source_url'
->
+export type PrivateOpportunityUpdate = PrivateOpportunityInput
 
 const columns =
   'id, user_id, source_url, title, organization_name, location_text, opportunity_kind, employment_type, remote_mode, description_text, posted_at, application_deadline, application_url, dismissed_at, created_at, updated_at'

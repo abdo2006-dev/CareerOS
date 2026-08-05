@@ -72,6 +72,19 @@ function renderPage() {
 afterEach(() => vi.resetAllMocks())
 
 describe('PrivateOpportunityDetailPage', () => {
+  it('asks for confirmation before deleting, and does not delete when cancelled', async () => {
+    get.mockResolvedValue({ data: entry, error: null })
+    getByPrivateOpportunity.mockResolvedValue({ data: null, error: null })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Research Assistant' })
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
   it('shows a missing state for a deleted manual opportunity', async () => {
     get.mockResolvedValue({ data: null, error: null })
     renderPage()
@@ -113,6 +126,29 @@ describe('PrivateOpportunityDetailPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('lets the owner correct source_url without touching other fields', async () => {
+    get.mockResolvedValue({ data: entry, error: null })
+    getByPrivateOpportunity.mockResolvedValue({ data: null, error: null })
+    update.mockResolvedValue({
+      data: { ...entry, source_url: 'https://jobs.fraunhofer.de/corrected' },
+      error: null,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Research Assistant' })
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const sourceUrlInput = screen.getByLabelText('Source URL')
+    await user.clear(sourceUrlInput)
+    await user.type(sourceUrlInput, 'https://jobs.fraunhofer.de/corrected')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(update).toHaveBeenCalledWith(
+      'priv-1',
+      expect.objectContaining({
+        source_url: 'https://jobs.fraunhofer.de/corrected',
+      }),
+    )
+  })
+
   it('hides the manual opportunity', async () => {
     get.mockResolvedValue({ data: entry, error: null })
     getByPrivateOpportunity.mockResolvedValue({ data: null, error: null })
@@ -128,12 +164,14 @@ describe('PrivateOpportunityDetailPage', () => {
     get.mockResolvedValue({ data: entry, error: null })
     getByPrivateOpportunity.mockResolvedValue({ data: null, error: null })
     remove.mockResolvedValue({ data: [{ id: 'priv-1' }], error: null })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
     await screen.findByRole('heading', { name: 'Research Assistant' })
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     expect(remove).toHaveBeenCalledWith('priv-1')
     expect(navigate).toHaveBeenCalledWith('/opportunities', { replace: true })
+    confirmSpy.mockRestore()
   })
 
   it('starts an application from the manual opportunity', async () => {

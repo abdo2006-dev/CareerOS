@@ -172,6 +172,35 @@ describe('ApplicationDetailPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('asks for confirmation before deleting the application', async () => {
+    get.mockResolvedValue({ data: sharedApp, error: null })
+    getVersion.mockResolvedValue({ data: version, error: null })
+    prepGet.mockResolvedValue({ data: null, error: null })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Senior Data Scientist' })
+    await user.click(screen.getByRole('button', { name: 'Delete application' }))
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('deletes the application and navigates back once confirmed', async () => {
+    get.mockResolvedValue({ data: sharedApp, error: null })
+    getVersion.mockResolvedValue({ data: version, error: null })
+    prepGet.mockResolvedValue({ data: null, error: null })
+    remove.mockResolvedValue({ data: [{ id: 'app-1' }], error: null })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'Senior Data Scientist' })
+    await user.click(screen.getByRole('button', { name: 'Delete application' }))
+    expect(remove).toHaveBeenCalledWith('app-1')
+    expect(navigate).toHaveBeenCalledWith('/applications', { replace: true })
+    confirmSpy.mockRestore()
+  })
+
   it('renders a manual application snapshot without fetching a shared version', async () => {
     const manualApp = {
       ...sharedApp,

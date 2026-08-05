@@ -18,6 +18,15 @@ export interface OpportunityFilters {
   remoteMode?: string
   sourceKey?: string
   lifecycleStatus?: string
+  locationText?: string
+  /** Restrict results to exactly these opportunity_ids (e.g. saved-only,
+   * applied-only). An empty array (as opposed to undefined) means "no
+   * matching opportunities" and short-circuits to zero rows without a
+   * request. */
+  includeOpportunityIds?: string[]
+  /** Exclude these opportunity_ids (e.g. hidden, unless "show hidden" is on).
+   * An empty array applies no exclusion. */
+  excludeOpportunityIds?: string[]
 }
 
 const searchColumns =
@@ -39,6 +48,20 @@ export const opportunityRepository = {
     page: number,
     pageSize = PAGE_SIZE,
   ) {
+    // Empty (but defined) include set means "nothing matches" -- e.g.
+    // saved-only with no saved opportunities. Short-circuit before hitting
+    // PostgREST so the caller sees an honest zero-row, zero-count result.
+    if (
+      filters.includeOpportunityIds &&
+      filters.includeOpportunityIds.length === 0
+    ) {
+      return {
+        data: [] as OpportunitySearchRow[],
+        count: 0,
+        error: null,
+      }
+    }
+
     let query = supabase
       .from('opportunity_search')
       .select(searchColumns, { count: 'exact' })
@@ -57,6 +80,23 @@ export const opportunityRepository = {
     if (filters.sourceKey) query = query.eq('source_key', filters.sourceKey)
     if (filters.lifecycleStatus)
       query = query.eq('lifecycle_status', filters.lifecycleStatus)
+    if (filters.locationText?.trim()) {
+      const term = escapeForIlike(filters.locationText.trim())
+      query = query.ilike('location_text', `%${term}%`)
+    }
+    if (filters.includeOpportunityIds) {
+      query = query.in('opportunity_id', filters.includeOpportunityIds)
+    }
+    if (
+      filters.excludeOpportunityIds &&
+      filters.excludeOpportunityIds.length > 0
+    ) {
+      query = query.not(
+        'opportunity_id',
+        'in',
+        `(${filters.excludeOpportunityIds.join(',')})`,
+      )
+    }
 
     switch (sort) {
       case 'posted_desc':
@@ -86,6 +126,15 @@ export const opportunityRepository = {
     const from = page * pageSize
     query = query.range(from, from + pageSize - 1)
     return query.returns<OpportunitySearchRow[]>()
+  },
+
+  async listSources() {
+    return supabase
+      .from('sources')
+      .select('source_key, display_name')
+      .eq('enabled', true)
+      .order('display_name')
+      .returns<{ source_key: string; display_name: string }[]>()
   },
 
   async get(opportunityId: string) {

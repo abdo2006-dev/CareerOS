@@ -1,13 +1,14 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OpportunityListPage } from './OpportunityListPage'
 
 const search = vi.fn()
 const listState = vi.fn()
 const setSaved = vi.fn()
 const setHidden = vi.fn()
+const listSources = vi.fn()
 const applicationsList = vi.fn()
 const privateList = vi.fn()
 
@@ -21,6 +22,7 @@ vi.mock('../lib/opportunityRepository', () => ({
     listState: (...args: unknown[]) => listState(...args),
     setSaved: (...args: unknown[]) => setSaved(...args),
     setHidden: (...args: unknown[]) => setHidden(...args),
+    listSources: (...args: unknown[]) => listSources(...args),
   },
 }))
 vi.mock('../lib/privateOpportunityRepository', () => ({
@@ -69,6 +71,9 @@ function renderPage() {
   )
 }
 
+beforeEach(() => {
+  listSources.mockResolvedValue({ data: [], error: null })
+})
 afterEach(() => vi.resetAllMocks())
 
 describe('OpportunityListPage', () => {
@@ -150,8 +155,14 @@ describe('OpportunityListPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('excludes a hidden listing by default and shows it when "Show hidden" is checked', async () => {
-    search.mockResolvedValue({ data: [row], count: 1, error: null })
+  it('excludes hidden opportunities server-side (before pagination), not by filtering an already-paginated page in React', async () => {
+    // Regression for the bug where hidden/saved/applied-only filtering was
+    // applied client-side *after* an already-paginated page came back,
+    // which could hide matching rows that existed on another unexamined
+    // page. The fix pushes exclude/include id sets into search() itself, so
+    // this asserts the exact filters.excludeOpportunityIds sent, and that
+    // the rendered rows/count come directly from whatever search() returns
+    // (no further client-side removal).
     listState.mockResolvedValue({
       data: [
         {
@@ -168,15 +179,98 @@ describe('OpportunityListPage', () => {
     })
     applicationsList.mockResolvedValue({ data: [], error: null })
     privateList.mockResolvedValue({ data: [], error: null })
+    search.mockImplementation(
+      (filters: { excludeOpportunityIds?: string[] }) => {
+        const excluded = filters.excludeOpportunityIds ?? []
+        if (excluded.includes('opp-1')) {
+          return Promise.resolve({ data: [], count: 0, error: null })
+        }
+        return Promise.resolve({ data: [row], count: 1, error: null })
+      },
+    )
     const user = userEvent.setup()
     renderPage()
     expect(
       await screen.findByText(/No opportunities match your filters/i),
     ).toBeInTheDocument()
+    expect(search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ excludeOpportunityIds: ['opp-1'] }),
+      expect.anything(),
+      0,
+    )
+
     await user.click(screen.getByLabelText('Show hidden'))
     expect(
       await screen.findByText('Working Student, Flight Software'),
     ).toBeInTheDocument()
+    const lastCall = search.mock.calls.at(-1)
+    expect(
+      (lastCall?.[0] as { excludeOpportunityIds?: string[] })
+        .excludeOpportunityIds,
+    ).toBeUndefined()
+  })
+
+  it('short-circuits saved-only to zero rows via includeOpportunityIds: [] when nothing is saved, without a stale total', async () => {
+    search.mockImplementation(
+      (filters: { includeOpportunityIds?: string[] }) => {
+        if (filters.includeOpportunityIds) {
+          const matching =
+            filters.includeOpportunityIds.length === 0 ? [] : [row]
+          return Promise.resolve({
+            data: matching,
+            count: matching.length,
+            error: null,
+          })
+        }
+        return Promise.resolve({ data: [row], count: 1, error: null })
+      },
+    )
+    listState.mockResolvedValue({ data: [], error: null })
+    applicationsList.mockResolvedValue({ data: [], error: null })
+    privateList.mockResolvedValue({ data: [], error: null })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Working Student, Flight Software')
+    await user.click(screen.getByLabelText('Saved only'))
+    expect(
+      await screen.findByText(/No opportunities match your filters/i),
+    ).toBeInTheDocument()
+    expect(search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeOpportunityIds: [] }),
+      expect.anything(),
+      0,
+    )
+    expect(screen.getByText(/^Page 1 of 1$/)).toBeInTheDocument()
+  })
+
+  it('resets to page 1 when a filter changes while on a later page', async () => {
+    search.mockResolvedValue({ data: [row], count: 45, error: null })
+    listState.mockResolvedValue({ data: [], error: null })
+    applicationsList.mockResolvedValue({ data: [], error: null })
+    privateList.mockResolvedValue({ data: [], error: null })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Working Student, Flight Software')
+    expect(screen.getByText(/^Page 1 of 3$/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(await screen.findByText(/^Page 2 of 3$/)).toBeInTheDocument()
+    expect(search).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      1,
+    )
+
+    await user.selectOptions(
+      screen.getByLabelText('Employment type'),
+      'internship',
+    )
+    expect(await screen.findByText(/^Page 1 of 3$/)).toBeInTheDocument()
+    expect(search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ employmentType: 'internship' }),
+      expect.anything(),
+      0,
+    )
   })
 
   it('switches to the Manual tab and shows the user-added opportunity', async () => {

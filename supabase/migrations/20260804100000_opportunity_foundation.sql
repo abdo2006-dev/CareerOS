@@ -538,11 +538,15 @@ begin
 
   new.user_id := old.user_id;
   new.created_at := old.created_at;
-  new.source_url := old.source_url;
   new.promoted_to_opportunity_id := old.promoted_to_opportunity_id;
 
+  -- source_url is ordinary mutable owner-corrected metadata (e.g. the board
+  -- moved, or the user pasted the wrong link) -- editing it never touches
+  -- an already-captured applications.private_opportunity_snapshot, which is
+  -- a one-time copy taken at application creation and never re-read live.
   content_changed :=
-    new.title is distinct from old.title
+    new.source_url is distinct from old.source_url
+    or new.title is distinct from old.title
     or new.organization_name is distinct from old.organization_name
     or new.location_text is distinct from old.location_text
     or new.opportunity_kind is distinct from old.opportunity_kind
@@ -581,8 +585,8 @@ grant insert (
   employment_type, remote_mode, description_text, posted_at, application_deadline, application_url
 ) on public.private_opportunities to authenticated;
 grant update (
-  title, organization_name, location_text, opportunity_kind, employment_type, remote_mode,
-  description_text, posted_at, application_deadline, application_url, dismissed_at
+  source_url, title, organization_name, location_text, opportunity_kind, employment_type,
+  remote_mode, description_text, posted_at, application_deadline, application_url, dismissed_at
 ) on public.private_opportunities to authenticated;
 grant delete on public.private_opportunities to authenticated;
 grant select, insert, update, delete on public.private_opportunities to service_role;

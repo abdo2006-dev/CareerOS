@@ -24,6 +24,9 @@ import { errorMessage, safeError } from '../lib/profileTypes'
 
 type Tab = 'discovered' | 'manual'
 type Status = 'loading' | 'ready' | 'error'
+type SourceOption = { source_key: string; display_name: string }
+
+const locationPresets = ['Bremen', 'Hamburg']
 
 function formatDate(value: string | null) {
   if (!value) return null
@@ -44,6 +47,9 @@ export function OpportunityListPage() {
   const [kind, setKind] = useState('')
   const [employmentType, setEmploymentType] = useState('')
   const [remoteMode, setRemoteMode] = useState('')
+  const [sourceKey, setSourceKey] = useState('')
+  const [lifecycleStatus, setLifecycleStatus] = useState('')
+  const [locationText, setLocationText] = useState('')
   const [sort, setSort] = useState<OpportunitySort>('discovered_desc')
   const [showHidden, setShowHidden] = useState(false)
   const [savedOnly, setSavedOnly] = useState(false)
@@ -54,7 +60,10 @@ export function OpportunityListPage() {
   const [stateMap, setStateMap] = useState<
     Map<string, UserOpportunityStateRow>
   >(new Map())
-  const [appliedVersions, setAppliedVersions] = useState<Set<string>>(new Set())
+  const [appliedOpportunityIds, setAppliedOpportunityIds] = useState<
+    Set<string>
+  >(new Set())
+  const [sources, setSources] = useState<SourceOption[]>([])
   const [discoveredStatus, setDiscoveredStatus] = useState<Status>('loading')
   const [pendingSave, setPendingSave] = useState<string | null>(null)
 
@@ -68,35 +77,80 @@ export function OpportunityListPage() {
   const loadDiscovered = useCallback(async () => {
     if (!userId) return
     setDiscoveredStatus('loading')
+
+    // State/applications sets are small (per-user) -- fetch them first so
+    // saved/hidden/applied filters can be pushed into the shared-opportunity
+    // query itself, applied before pagination and the exact count, rather
+    // than filtered out of an already-paginated page client-side.
+    const [stateResult, applicationsResult] = await Promise.all([
+      opportunityRepository.listState(userId),
+      applicationRepository.list(userId),
+    ])
+    if (stateResult.error || applicationsResult.error) {
+      setDiscoveredStatus('error')
+      return
+    }
+    const nextStateMap = new Map(
+      stateResult.data.map((row) => [row.opportunity_id, row]),
+    )
+    setStateMap(nextStateMap)
+    const appliedIds = new Set(
+      applicationsResult.data
+        .map((app) => app.shared_opportunity_id)
+        .filter((id): id is string => Boolean(id)),
+    )
+    setAppliedOpportunityIds(appliedIds)
+
+    const hiddenIds = [...nextStateMap.values()]
+      .filter((row) => row.hidden_at)
+      .map((row) => row.opportunity_id)
+    const savedIds = [...nextStateMap.values()]
+      .filter((row) => row.saved_at)
+      .map((row) => row.opportunity_id)
+
     const filters: OpportunityFilters = {
       search,
       opportunityKind: kind || undefined,
       employmentType: employmentType || undefined,
       remoteMode: remoteMode || undefined,
+      sourceKey: sourceKey || undefined,
+      lifecycleStatus: lifecycleStatus || undefined,
+      locationText: locationText || undefined,
     }
-    const [searchResult, stateResult, applicationsResult] = await Promise.all([
-      opportunityRepository.search(filters, sort, page),
-      opportunityRepository.listState(userId),
-      applicationRepository.list(userId),
-    ])
-    if (searchResult.error || stateResult.error || applicationsResult.error) {
+    if (!showHidden) filters.excludeOpportunityIds = hiddenIds
+    if (savedOnly && appliedOnly) {
+      filters.includeOpportunityIds = savedIds.filter((id) =>
+        appliedIds.has(id),
+      )
+    } else if (savedOnly) {
+      filters.includeOpportunityIds = savedIds
+    } else if (appliedOnly) {
+      filters.includeOpportunityIds = [...appliedIds]
+    }
+
+    const searchResult = await opportunityRepository.search(filters, sort, page)
+    if (searchResult.error) {
       setDiscoveredStatus('error')
       return
     }
-    setStateMap(
-      new Map(stateResult.data.map((row) => [row.opportunity_id, row])),
-    )
-    setAppliedVersions(
-      new Set(
-        applicationsResult.data
-          .map((app) => app.opportunity_version_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    )
     setRows(searchResult.data)
     setTotal(searchResult.count ?? searchResult.data.length)
     setDiscoveredStatus('ready')
-  }, [userId, search, kind, employmentType, remoteMode, sort, page])
+  }, [
+    userId,
+    search,
+    kind,
+    employmentType,
+    remoteMode,
+    sourceKey,
+    lifecycleStatus,
+    locationText,
+    sort,
+    showHidden,
+    savedOnly,
+    appliedOnly,
+    page,
+  ])
 
   const loadManual = useCallback(async () => {
     if (!userId) return
@@ -122,6 +176,21 @@ export function OpportunityListPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous initial load updates state after the repository resolves
     void loadManual()
   }, [loadManual])
+
+  useEffect(() => {
+    let cancelled = false
+    void opportunityRepository.listSources().then((result) => {
+      if (!cancelled && !result.error) setSources(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function updateFilter<T>(setter: (value: T) => void, value: T) {
+    setter(value)
+    setPage(0)
+  }
 
   async function toggleSave(row: OpportunitySearchRow) {
     if (!userId || pendingSave) return
@@ -160,15 +229,6 @@ export function OpportunityListPage() {
     if (result.error) setMessage(errorMessage(safeError(result.error)))
     else await loadManual()
   }
-
-  const visibleRows = rows.filter((row) => {
-    const state = stateMap.get(row.opportunity_id)
-    if (!showHidden && state?.hidden_at) return false
-    if (savedOnly && !state?.saved_at) return false
-    if (appliedOnly && !appliedVersions.has(row.opportunity_version_id))
-      return false
-    return true
-  })
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -219,10 +279,7 @@ export function OpportunityListPage() {
             <select
               id="opportunity-kind"
               value={kind}
-              onChange={(event) => {
-                setKind(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => updateFilter(setKind, event.target.value)}
             >
               <option value="">Any kind</option>
               {opportunityKindOptions.map((value) => (
@@ -235,10 +292,9 @@ export function OpportunityListPage() {
             <select
               id="employment-type"
               value={employmentType}
-              onChange={(event) => {
-                setEmploymentType(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) =>
+                updateFilter(setEmploymentType, event.target.value)
+              }
             >
               <option value="">Any employment type</option>
               {employmentTypeOptions.map((value) => (
@@ -251,10 +307,9 @@ export function OpportunityListPage() {
             <select
               id="remote-mode"
               value={remoteMode}
-              onChange={(event) => {
-                setRemoteMode(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) =>
+                updateFilter(setRemoteMode, event.target.value)
+              }
             >
               <option value="">Any remote mode</option>
               {remoteModeOptions.map((value) => (
@@ -263,6 +318,64 @@ export function OpportunityListPage() {
                 </option>
               ))}
             </select>
+            <label htmlFor="opportunity-source">Source</label>
+            <select
+              id="opportunity-source"
+              value={sourceKey}
+              onChange={(event) =>
+                updateFilter(setSourceKey, event.target.value)
+              }
+            >
+              <option value="">Any source</option>
+              {sources.map((source) => (
+                <option key={source.source_key} value={source.source_key}>
+                  {source.display_name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="lifecycle-status">Status</label>
+            <select
+              id="lifecycle-status"
+              value={lifecycleStatus}
+              onChange={(event) =>
+                updateFilter(setLifecycleStatus, event.target.value)
+              }
+            >
+              <option value="">Any status</option>
+              <option value="active">Active</option>
+              <option value="stale">Stale</option>
+              <option value="closed">Closed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <label htmlFor="opportunity-location">Location</label>
+            <input
+              id="opportunity-location"
+              type="text"
+              value={locationText}
+              onChange={(event) =>
+                updateFilter(setLocationText, event.target.value)
+              }
+              placeholder="e.g. Bremen"
+            />
+            {locationPresets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="secondary"
+                aria-pressed={locationText === preset}
+                onClick={() => {
+                  updateFilter(setLocationText, preset)
+                  void loadDiscovered()
+                }}
+              >
+                {preset}
+              </button>
+            ))}
+            <p>
+              Location matches plain text only -- there is no geocoding or
+              structured location normalization yet, so unusual spellings may
+              not match.
+            </p>
             <label htmlFor="opportunity-sort">Sort</label>
             <select
               id="opportunity-sort"
@@ -284,7 +397,9 @@ export function OpportunityListPage() {
               id="show-hidden"
               type="checkbox"
               checked={showHidden}
-              onChange={(event) => setShowHidden(event.target.checked)}
+              onChange={(event) =>
+                updateFilter(setShowHidden, event.target.checked)
+              }
             />{' '}
             Show hidden
           </label>
@@ -293,7 +408,9 @@ export function OpportunityListPage() {
               id="saved-only"
               type="checkbox"
               checked={savedOnly}
-              onChange={(event) => setSavedOnly(event.target.checked)}
+              onChange={(event) =>
+                updateFilter(setSavedOnly, event.target.checked)
+              }
             />{' '}
             Saved only
           </label>
@@ -302,7 +419,9 @@ export function OpportunityListPage() {
               id="applied-only"
               type="checkbox"
               checked={appliedOnly}
-              onChange={(event) => setAppliedOnly(event.target.checked)}
+              onChange={(event) =>
+                updateFilter(setAppliedOnly, event.target.checked)
+              }
             />{' '}
             Applied only
           </label>
@@ -316,18 +435,16 @@ export function OpportunityListPage() {
               </button>
             </div>
           )}
-          {discoveredStatus === 'ready' && visibleRows.length === 0 && (
+          {discoveredStatus === 'ready' && rows.length === 0 && (
             <p>No opportunities match your filters.</p>
           )}
-          {discoveredStatus === 'ready' && visibleRows.length > 0 && (
+          {discoveredStatus === 'ready' && rows.length > 0 && (
             <ul>
-              {visibleRows.map((row) => {
+              {rows.map((row) => {
                 const state = stateMap.get(row.opportunity_id)
                 const isSaved = Boolean(state?.saved_at)
                 const isHidden = Boolean(state?.hidden_at)
-                const isApplied = appliedVersions.has(
-                  row.opportunity_version_id,
-                )
+                const isApplied = appliedOpportunityIds.has(row.opportunity_id)
                 return (
                   <li key={row.opportunity_id}>
                     <Link to={`/opportunities/${row.opportunity_id}`}>

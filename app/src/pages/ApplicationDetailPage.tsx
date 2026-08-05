@@ -185,6 +185,12 @@ export function ApplicationDetailPage() {
 
   async function remove() {
     if (!application || pending) return
+    if (
+      !window.confirm(
+        'Delete this application? This also deletes its interview-preparation notes.',
+      )
+    )
+      return
     setPending(true)
     const result = await applicationRepository.remove(application.id)
     if (result.error) {

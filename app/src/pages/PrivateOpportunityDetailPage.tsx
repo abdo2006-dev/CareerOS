@@ -18,6 +18,7 @@ import {
 import { errorMessage, safeError } from '../lib/profileTypes'
 
 type FormValues = {
+  source_url: string
   title: string
   organization_name: string
   location_text: string
@@ -32,6 +33,7 @@ type FormValues = {
 
 function toFormValues(entry: PrivateOpportunity): FormValues {
   return {
+    source_url: entry.source_url,
     title: entry.title,
     organization_name: entry.organization_name,
     location_text: entry.location_text,
@@ -95,6 +97,10 @@ export function PrivateOpportunityDetailPage() {
 
   function validate(current: FormValues) {
     const nextErrors: Record<string, string> = {}
+    if (!current.source_url.trim())
+      nextErrors.source_url = 'Source URL is required.'
+    else if (!current.source_url.startsWith('https://'))
+      nextErrors.source_url = 'Source URL must start with https://.'
     if (!current.title.trim()) nextErrors.title = 'Title is required.'
     if (!current.organization_name.trim())
       nextErrors.organization_name = 'Organization is required.'
@@ -116,6 +122,7 @@ export function PrivateOpportunityDetailPage() {
     if (Object.keys(nextErrors).length || pending) return
     setPending(true)
     const result = await privateOpportunityRepository.update(entry.id, {
+      source_url: values.source_url.trim(),
       title: values.title.trim(),
       organization_name: values.organization_name.trim(),
       location_text: values.location_text.trim(),
@@ -153,6 +160,12 @@ export function PrivateOpportunityDetailPage() {
 
   async function remove() {
     if (!entry || pending) return
+    if (
+      !window.confirm(
+        'Delete this manual opportunity? This does not delete any existing application for it -- the application keeps its own pinned snapshot.',
+      )
+    )
+      return
     setPending(true)
     const result = await privateOpportunityRepository.remove(entry.id)
     if (result.error) {
@@ -171,6 +184,16 @@ export function PrivateOpportunityDetailPage() {
       entry.id,
     )
     if (result.error) {
+      if (result.error.code === '23505') {
+        const existing = await applicationRepository.getByPrivateOpportunity(
+          userId,
+          entry.id,
+        )
+        if (existing.data) {
+          navigate(`/applications/${existing.data.id}`)
+          return
+        }
+      }
       setMessage(errorMessage(safeError(result.error)))
       setPending(false)
       return
@@ -209,6 +232,21 @@ export function PrivateOpportunityDetailPage() {
       <section>
         <h2>Edit manual opportunity</h2>
         <form onSubmit={save} noValidate>
+          <div>
+            <label htmlFor="edit_source_url">Source URL</label>
+            <input
+              id="edit_source_url"
+              type="url"
+              value={values.source_url}
+              onChange={(event) => field('source_url', event.target.value)}
+              aria-invalid={Boolean(errors.source_url)}
+            />
+            {errors.source_url && <p role="alert">{errors.source_url}</p>}
+            <p>
+              Correcting this never changes an already-captured application
+              snapshot -- that stays exactly as it was when you applied.
+            </p>
+          </div>
           <div>
             <label htmlFor="edit_title">Title</label>
             <input

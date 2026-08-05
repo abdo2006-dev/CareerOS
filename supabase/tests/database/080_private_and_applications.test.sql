@@ -3,7 +3,7 @@
 -- rules from AGENTS.md / docs/adr/ADR-018. All fixture data is synthetic
 -- and this transaction is rolled back.
 begin;
-select plan(64);
+select plan(67);
 
 -- Structure -----------------------------------------------------------------
 
@@ -30,6 +30,11 @@ select is(
   not has_column_privilege('authenticated', 'public.private_opportunities', 'promoted_to_opportunity_id', 'INSERT, UPDATE'),
   true,
   'browser has no write grant on promoted_to_opportunity_id'
+);
+select is(
+  has_column_privilege('authenticated', 'public.private_opportunities', 'source_url', 'UPDATE'),
+  true,
+  'browser can correct source_url on an existing manual opportunity (ordinary mutable metadata, not provenance-locked)'
 );
 select is(
   not has_column_privilege('authenticated', 'public.applications', 'opportunity_version_id', 'UPDATE')
@@ -183,6 +188,14 @@ update public.private_opportunities set title = 'Research Assistant (Renamed)' w
 select is(
   (select private_opportunity_snapshot ->> 'title' from public.applications where private_opportunity_id = (select id from public.private_opportunities where organization_name = 'Fraunhofer IWES')),
   'Research Assistant', 'the application snapshot is immutable even after the private opportunity is edited'
+);
+select lives_ok(
+  $$ update public.private_opportunities set source_url = 'https://example.test/job-corrected' where organization_name = 'Fraunhofer IWES' $$,
+  'owner can correct source_url after creation'
+);
+select is(
+  (select private_opportunity_snapshot ->> 'source_url' from public.applications where private_opportunity_id = (select id from public.private_opportunities where organization_name = 'Fraunhofer IWES')),
+  'https://example.test/job', 'correcting source_url afterward does not alter the already-captured application snapshot'
 );
 
 select throws_ok(
