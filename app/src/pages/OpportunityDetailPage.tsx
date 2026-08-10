@@ -169,7 +169,7 @@ export function OpportunityDetailPage() {
     )
 
   return (
-    <section>
+    <section className="page opportunity-detail-page">
       <h2>{row.title}</h2>
       <p>
         {row.organization} · {row.source_display_name}
