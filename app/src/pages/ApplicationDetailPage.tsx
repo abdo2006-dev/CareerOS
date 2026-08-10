@@ -228,7 +228,7 @@ export function ApplicationDetailPage() {
     )
 
   return (
-    <section>
+    <section className="page application-detail-page">
       <h2>{pinned?.title ?? 'Application'}</h2>
       {pinned && <p>{pinned.organization}</p>}
       {message && <p role="alert">{message}</p>}
