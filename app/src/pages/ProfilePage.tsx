@@ -100,27 +100,55 @@ export function ProfilePage() {
     (check) => check.availability === 'not_implemented',
   )
   return (
-    <section>
-      <h2>Your profile</h2>
-      <p>Complete the implemented profile details below.</p>
-      <ul>
-        {implementedChecks.map((check) => (
-          <li key={check.id}>
-            <strong>{check.id.replaceAll('_', ' ')}:</strong>{' '}
-            {check.outcome === 'present' ? (
-              'Present'
-            ) : check.href ? (
-              <Link to={check.href}>{check.action}</Link>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      <h3>Not yet available</h3>
-      <ul>
-        {deferredChecks.map((check) => (
-          <li key={check.id}>{check.action}</li>
-        ))}
-      </ul>
+    <section className="profile-overview">
+      <header className="profile-heading">
+        <p className="eyebrow">Personal profile</p>
+        <h1>Your profile</h1>
+        <p>
+          Build the essentials that will make your opportunity workflow more
+          useful over time.
+        </p>
+      </header>
+      <section className="profile-section-card">
+        <div>
+          <p className="eyebrow">Profile foundations</p>
+          <h2>Keep your details current</h2>
+        </div>
+        <div className="profile-checks">
+          {implementedChecks.map((check) => (
+            <div className="profile-check" key={check.id}>
+              <span
+                className={
+                  check.outcome === 'present'
+                    ? 'check-complete'
+                    : 'check-pending'
+                }
+              >
+                {check.outcome === 'present' ? '✓' : '→'}
+              </span>
+              <div>
+                <strong>{check.id.replaceAll('_', ' ')}</strong>
+                <small>
+                  {check.outcome === 'present' ? 'Up to date' : check.action}
+                </small>
+              </div>
+              {check.outcome !== 'present' && check.href && (
+                <Link to={check.href}>Open</Link>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+      {deferredChecks.length > 0 && (
+        <section className="profile-section-card profile-later">
+          <p className="eyebrow">Coming later</p>
+          <h2>More profile sections will appear here</h2>
+          <p>
+            Projects, skills, languages, preferences and work eligibility are
+            planned next.
+          </p>
+        </section>
+      )}
     </section>
   )
 }

@@ -78,10 +78,12 @@ describe('ProfilePage', () => {
       await screen.findByText(/add or select primary education/i),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: /not yet available/i }),
+      screen.getByRole('heading', {
+        name: /more profile sections will appear here/i,
+      }),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/Projects are not yet available/i),
+      screen.getByText(/Projects, skills, languages, preferences/i),
     ).toBeInTheDocument()
   })
 })

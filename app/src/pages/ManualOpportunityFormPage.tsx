@@ -83,7 +83,7 @@ export function ManualOpportunityFormPage() {
   }
 
   return (
-    <section>
+    <section className="page manual-entry-page">
       <h2>Add an opportunity manually</h2>
       <p>
         Use this for a posting from a source CareerOS doesn't automatically

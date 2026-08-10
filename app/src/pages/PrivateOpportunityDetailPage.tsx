@@ -203,14 +203,14 @@ export function PrivateOpportunityDetailPage() {
 
   if (status === 'loading')
     return (
-      <section>
+      <section className="page manual-entry-page">
         <h2>Manual opportunity</h2>
         <p>Loading…</p>
       </section>
     )
   if (status === 'missing')
     return (
-      <section>
+      <section className="page manual-entry-page">
         <h2>Manual opportunity</h2>
         <p role="alert">This opportunity no longer exists.</p>
         <Link to="/opportunities">Return to opportunities</Link>
@@ -218,7 +218,7 @@ export function PrivateOpportunityDetailPage() {
     )
   if (status === 'error' || !entry || !values)
     return (
-      <section>
+      <section className="page manual-entry-page">
         <h2>Manual opportunity</h2>
         <p role="alert">This opportunity could not be loaded.</p>
         <button type="button" onClick={() => void load()}>
@@ -229,7 +229,7 @@ export function PrivateOpportunityDetailPage() {
 
   if (editing)
     return (
-      <section>
+      <section className="page manual-entry-page">
         <h2>Edit manual opportunity</h2>
         <form onSubmit={save} noValidate>
           <div>
@@ -392,7 +392,7 @@ export function PrivateOpportunityDetailPage() {
     )
 
   return (
-    <section>
+    <section className="page manual-entry-page">
       <h2>{entry.title}</h2>
       <p>Added by you</p>
       <p>

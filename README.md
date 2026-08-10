@@ -8,8 +8,9 @@ hackathons, scholarships, and other resume-building opportunities; compares them
 detailed saved profile; explains where the student is competitive and where they are not; and
 tracks the full lifecycle from "found it" to "applied" to "interviewed."
 
-Phase 0 is implemented. Phase 1A currently provides routed manual profile, primary-education,
-and experience/research workflows: a React/TypeScript/Vite frontend, a local Supabase stack
+Phase 2A is implemented as a local personal workspace. It provides a one-command Personal Mode,
+local Greenhouse discovery, opportunity/application tracking, and routed manual profile,
+primary-education, and experience/research workflows: a React/TypeScript/Vite frontend, a local Supabase stack
 (Postgres/Auth/PostgREST), `profiles`, `education_entries`, and `work_experience` protected by
 Row Level Security, and CI. Projects, links, skills, preferences, and resume features remain
 deferred. See [Local development setup](#local-development-setup) below to run it.
@@ -57,6 +58,29 @@ matter of enabling sign-ups, not rearchitecting the schema or the pipeline. See
 
 ## Local development setup
 
+### Personal Mode — normal daily use
+
+With Docker or Colima running, use just:
+
+```bash
+npm run personal
+```
+
+It starts the local stack when needed, applies only pending migrations (never `supabase db reset`),
+generates gitignored local runtime configuration, reuses the existing `dev-owner@careeros.local`
+identity when present, refreshes the configured Greenhouse sources, and starts CareerOS at
+`http://127.0.0.1:5173`. Personal Mode signs that local owner in invisibly; it never shows email
+or password UI, and `sign-in` routes back into the workspace. The generated local session
+credential lives only in gitignored `.careeros/` and `app/.env.local`; it is not a service-role
+credential and public authentication remains dormant/recoverable for a later deployment.
+
+The page-level **Refresh opportunities** action talks only to the loopback companion started by
+this command. It runs the trusted local ingestion CLI without exposing its service-role key to the
+browser. Re-running `npm run personal` is safe: existing opportunities, saved state, applications,
+interview notes, profile data, and version history are preserved.
+
+### Advanced maintainer and isolated-test setup
+
 Prerequisites:
 
 - Node.js `22.23.1` (the root [.nvmrc](.nvmrc) is authoritative). Run `nvm use` from the
@@ -87,7 +111,8 @@ supabase start
 #    bound to 127.0.0.1.
 ./supabase/scripts/dev-tunnel.sh
 
-# 4. Apply every migration from an empty database
+# 4. Apply every migration from an empty database (isolated test setup only;
+# never use this during Personal Mode or against personal data)
 supabase db reset
 
 # 5. Create the two local-only development login users (idempotent).

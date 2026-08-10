@@ -1,0 +1,13 @@
+{
+  "name": "careeros",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": "22.23.1"
+  },
+  "scripts": {
+    "personal": "node scripts/personal.mjs",
+    "personal:runtime": "node scripts/personal-runtime.mjs"
+  }
+}

@@ -1,14 +1,15 @@
 import { Link } from 'react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { applicationRepository } from '../lib/applicationRepository'
 import {
-  PAGE_SIZE,
   opportunityRepository,
+  PAGE_SIZE,
   type OpportunityFilters,
   type OpportunitySort,
 } from '../lib/opportunityRepository'
+import { personalRuntime, type RefreshStatus } from '../lib/personalRuntime'
 import { privateOpportunityRepository } from '../lib/privateOpportunityRepository'
-import { applicationRepository } from '../lib/applicationRepository'
 import {
   employmentTypeLabels,
   employmentTypeOptions,
@@ -22,27 +23,32 @@ import {
 } from '../lib/opportunityTypes'
 import { errorMessage, safeError } from '../lib/profileTypes'
 
-type Tab = 'discovered' | 'manual'
-type Status = 'loading' | 'ready' | 'error'
 type SourceOption = { source_key: string; display_name: string }
-
-const locationPresets = ['Bremen', 'Hamburg']
+type Status = 'loading' | 'ready' | 'error'
 
 function formatDate(value: string | null) {
   if (!value) return null
   return new Intl.DateTimeFormat('en', {
-    year: 'numeric',
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
   }).format(new Date(value))
+}
+function preview(value: string) {
+  return value.length > 185 ? `${value.slice(0, 185).trim()}…` : value
+}
+function relative(value: string | null) {
+  if (!value) return 'Not refreshed yet'
+  const minutes = Math.max(
+    0,
+    Math.round((Date.now() - new Date(value).getTime()) / 60000),
+  )
+  return minutes < 1 ? 'Just now' : `${minutes} min ago`
 }
 
 export function OpportunityListPage() {
   const { session } = useAuth()
   const userId = session?.user.id
-  const [tab, setTab] = useState<Tab>('discovered')
-
-  // Discovered (shared) state -------------------------------------------
   const [search, setSearch] = useState('')
   const [kind, setKind] = useState('')
   const [employmentType, setEmploymentType] = useState('')
@@ -51,63 +57,44 @@ export function OpportunityListPage() {
   const [lifecycleStatus, setLifecycleStatus] = useState('')
   const [locationText, setLocationText] = useState('')
   const [sort, setSort] = useState<OpportunitySort>('discovered_desc')
-  const [showHidden, setShowHidden] = useState(false)
   const [savedOnly, setSavedOnly] = useState(false)
   const [appliedOnly, setAppliedOnly] = useState(false)
+  const [showHidden, setShowHidden] = useState(false)
+  const [advanced, setAdvanced] = useState(false)
   const [page, setPage] = useState(0)
   const [rows, setRows] = useState<OpportunitySearchRow[]>([])
   const [total, setTotal] = useState(0)
   const [stateMap, setStateMap] = useState<
     Map<string, UserOpportunityStateRow>
   >(new Map())
-  const [appliedOpportunityIds, setAppliedOpportunityIds] = useState<
-    Set<string>
-  >(new Set())
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set())
   const [sources, setSources] = useState<SourceOption[]>([])
-  const [discoveredStatus, setDiscoveredStatus] = useState<Status>('loading')
-  const [pendingSave, setPendingSave] = useState<string | null>(null)
-
-  // Manual state ------------------------------------------------------
-  const [showDismissed, setShowDismissed] = useState(false)
-  const [manualRows, setManualRows] = useState<PrivateOpportunity[]>([])
-  const [manualStatus, setManualStatus] = useState<Status>('loading')
-
+  const [status, setStatus] = useState<Status>('loading')
+  const [refresh, setRefresh] = useState<RefreshStatus | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [manual, setManual] = useState<PrivateOpportunity[]>([])
+  const [tab, setTab] = useState<'discovered' | 'manual'>('discovered')
 
-  const loadDiscovered = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!userId) return
-    setDiscoveredStatus('loading')
-
-    // State/applications sets are small (per-user) -- fetch them first so
-    // saved/hidden/applied filters can be pushed into the shared-opportunity
-    // query itself, applied before pagination and the exact count, rather
-    // than filtered out of an already-paginated page client-side.
-    const [stateResult, applicationsResult] = await Promise.all([
+    setStatus('loading')
+    const [states, applications] = await Promise.all([
       opportunityRepository.listState(userId),
       applicationRepository.list(userId),
     ])
-    if (stateResult.error || applicationsResult.error) {
-      setDiscoveredStatus('error')
+    if (states.error || applications.error) {
+      setStatus('error')
       return
     }
-    const nextStateMap = new Map(
-      stateResult.data.map((row) => [row.opportunity_id, row]),
+    const nextStates = new Map(
+      states.data.map((row) => [row.opportunity_id, row]),
     )
-    setStateMap(nextStateMap)
-    const appliedIds = new Set(
-      applicationsResult.data
-        .map((app) => app.shared_opportunity_id)
+    const nextApplied = new Set(
+      applications.data
+        .map((application) => application.shared_opportunity_id)
         .filter((id): id is string => Boolean(id)),
     )
-    setAppliedOpportunityIds(appliedIds)
-
-    const hiddenIds = [...nextStateMap.values()]
-      .filter((row) => row.hidden_at)
-      .map((row) => row.opportunity_id)
-    const savedIds = [...nextStateMap.values()]
-      .filter((row) => row.saved_at)
-      .map((row) => row.opportunity_id)
-
     const filters: OpportunityFilters = {
       search,
       opportunityKind: kind || undefined,
@@ -117,25 +104,29 @@ export function OpportunityListPage() {
       lifecycleStatus: lifecycleStatus || undefined,
       locationText: locationText || undefined,
     }
+    const savedIds = [...nextStates.values()]
+      .filter((row) => row.saved_at)
+      .map((row) => row.opportunity_id)
+    const hiddenIds = [...nextStates.values()]
+      .filter((row) => row.hidden_at)
+      .map((row) => row.opportunity_id)
     if (!showHidden) filters.excludeOpportunityIds = hiddenIds
-    if (savedOnly && appliedOnly) {
+    if (savedOnly && appliedOnly)
       filters.includeOpportunityIds = savedIds.filter((id) =>
-        appliedIds.has(id),
+        nextApplied.has(id),
       )
-    } else if (savedOnly) {
-      filters.includeOpportunityIds = savedIds
-    } else if (appliedOnly) {
-      filters.includeOpportunityIds = [...appliedIds]
-    }
-
-    const searchResult = await opportunityRepository.search(filters, sort, page)
-    if (searchResult.error) {
-      setDiscoveredStatus('error')
+    else if (savedOnly) filters.includeOpportunityIds = savedIds
+    else if (appliedOnly) filters.includeOpportunityIds = [...nextApplied]
+    const result = await opportunityRepository.search(filters, sort, page)
+    if (result.error) {
+      setStatus('error')
       return
     }
-    setRows(searchResult.data)
-    setTotal(searchResult.count ?? searchResult.data.length)
-    setDiscoveredStatus('ready')
+    setRows(result.data)
+    setTotal(result.count ?? result.data.length)
+    setStateMap(nextStates)
+    setAppliedIds(nextApplied)
+    setStatus('ready')
   }, [
     userId,
     search,
@@ -146,102 +137,164 @@ export function OpportunityListPage() {
     lifecycleStatus,
     locationText,
     sort,
-    showHidden,
     savedOnly,
     appliedOnly,
+    showHidden,
     page,
   ])
 
-  const loadManual = useCallback(async () => {
+  const loadMeta = useCallback(async () => {
     if (!userId) return
-    setManualStatus('loading')
-    const result = await privateOpportunityRepository.list(
-      userId,
-      showDismissed,
+    const [sourceResult, manualResult, refreshResult] = await Promise.all([
+      opportunityRepository.listSources(),
+      privateOpportunityRepository.list(userId, false),
+      personalRuntime.status(),
+    ])
+    if (!sourceResult.error) setSources(sourceResult.data)
+    if (!manualResult.error) setManual(manualResult.data)
+    setRefresh(refreshResult)
+  }, [userId])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous repository load updates state after resolution
+    void load()
+  }, [load])
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous metadata load updates state after resolution
+    void loadMeta()
+  }, [loadMeta])
+  useEffect(() => {
+    if (refresh?.state !== 'refreshing') return
+    const timer = window.setInterval(
+      () =>
+        void personalRuntime.status().then((result) => {
+          setRefresh(result)
+          if (result?.state === 'ready') {
+            void load()
+            void loadMeta()
+          }
+        }),
+      1600,
     )
-    if (result.error) {
-      setManualStatus('error')
-      return
-    }
-    setManualRows(result.data)
-    setManualStatus('ready')
-  }, [userId, showDismissed])
+    return () => window.clearInterval(timer)
+  }, [refresh?.state, load, loadMeta])
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous initial load updates state after the repository resolves
-    void loadDiscovered()
-  }, [loadDiscovered])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous initial load updates state after the repository resolves
-    void loadManual()
-  }, [loadManual])
-
-  useEffect(() => {
-    let cancelled = false
-    void opportunityRepository.listSources().then((result) => {
-      if (!cancelled && !result.error) setSources(result.data)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  function updateFilter<T>(setter: (value: T) => void, value: T) {
-    setter(value)
+  function change(value: (next: string) => void, next: string) {
+    value(next)
     setPage(0)
   }
-
   async function toggleSave(row: OpportunitySearchRow) {
-    if (!userId || pendingSave) return
-    setPendingSave(row.opportunity_id)
-    const isSaved = Boolean(stateMap.get(row.opportunity_id)?.saved_at)
+    if (!userId || pendingId) return
+    setPendingId(row.opportunity_id)
     const result = await opportunityRepository.setSaved(
       userId,
       row.opportunity_id,
       row.opportunity_version_id,
-      !isSaved,
+      !stateMap.get(row.opportunity_id)?.saved_at,
     )
     if (result.error) setMessage(errorMessage(safeError(result.error)))
-    else await loadDiscovered()
-    setPendingSave(null)
+    else await load()
+    setPendingId(null)
   }
-
   async function toggleHide(row: OpportunitySearchRow) {
-    if (!userId || pendingSave) return
-    setPendingSave(row.opportunity_id)
-    const isHidden = Boolean(stateMap.get(row.opportunity_id)?.hidden_at)
+    if (!userId || pendingId) return
+    setPendingId(row.opportunity_id)
     const result = await opportunityRepository.setHidden(
       userId,
       row.opportunity_id,
-      !isHidden,
+      !stateMap.get(row.opportunity_id)?.hidden_at,
     )
     if (result.error) setMessage(errorMessage(safeError(result.error)))
-    else await loadDiscovered()
-    setPendingSave(null)
+    else await load()
+    setPendingId(null)
   }
-
-  async function toggleDismiss(row: PrivateOpportunity) {
-    const result = await privateOpportunityRepository.setDismissed(
-      row.id,
-      !row.dismissed_at,
-    )
-    if (result.error) setMessage(errorMessage(safeError(result.error)))
-    else await loadManual()
+  function clearAll() {
+    setSearch('')
+    setKind('')
+    setEmploymentType('')
+    setRemoteMode('')
+    setSourceKey('')
+    setLifecycleStatus('')
+    setLocationText('')
+    setSavedOnly(false)
+    setAppliedOnly(false)
+    setShowHidden(false)
+    setPage(0)
   }
-
+  const active = useMemo(
+    () =>
+      [
+        {
+          label:
+            kind &&
+            opportunityKindLabels[kind as keyof typeof opportunityKindLabels],
+          clear: () => setKind(''),
+        },
+        {
+          label:
+            employmentType &&
+            employmentTypeLabels[
+              employmentType as keyof typeof employmentTypeLabels
+            ],
+          clear: () => setEmploymentType(''),
+        },
+        {
+          label:
+            remoteMode &&
+            remoteModeLabels[remoteMode as keyof typeof remoteModeLabels],
+          clear: () => setRemoteMode(''),
+        },
+        { label: locationText, clear: () => setLocationText('') },
+        { label: savedOnly ? 'Saved' : '', clear: () => setSavedOnly(false) },
+        {
+          label: appliedOnly ? 'Applied' : '',
+          clear: () => setAppliedOnly(false),
+        },
+      ].filter((item): item is { label: string; clear: () => void } =>
+        Boolean(item.label),
+      ),
+    [kind, employmentType, remoteMode, locationText, savedOnly, appliedOnly],
+  )
+  const noRun = refresh?.lastCompletedAt === null && total === 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <section>
-      <h2>Opportunities</h2>
-      {message && <p role="alert">{message}</p>}
-      <div role="tablist" aria-label="Opportunity source">
+    <section className="page opportunities-page">
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Opportunity discovery</p>
+          <h1>Opportunities</h1>
+          <p className="page-subtitle">
+            {total
+              ? `${total} opportunities ready to explore`
+              : 'Your current discovery workspace'}
+          </p>
+        </div>
+        <div className="header-actions">
+          <button
+            className="button-primary"
+            type="button"
+            disabled={refresh?.state === 'refreshing'}
+            onClick={() => void personalRuntime.refresh().then(setRefresh)}
+          >
+            {refresh?.state === 'refreshing'
+              ? 'Refreshing…'
+              : 'Refresh opportunities'}
+          </button>
+          <Link className="button-secondary" to="/opportunities/import">
+            Add manually
+          </Link>
+        </div>
+      </header>
+      <div
+        role="tablist"
+        className="opportunity-tabs"
+        aria-label="Opportunity source"
+      >
         <button
           type="button"
           role="tab"
           aria-selected={tab === 'discovered'}
-          className={tab === 'discovered' ? '' : 'secondary'}
+          className={tab === 'discovered' ? 'active' : ''}
           onClick={() => setTab('discovered')}
         >
           Discovered
@@ -250,36 +303,171 @@ export function OpportunityListPage() {
           type="button"
           role="tab"
           aria-selected={tab === 'manual'}
-          className={tab === 'manual' ? '' : 'secondary'}
+          className={tab === 'manual' ? 'active' : ''}
           onClick={() => setTab('manual')}
         >
           Manual
         </button>
-        <Link to="/opportunities/import">Add manually</Link>
       </div>
-
-      {tab === 'discovered' && (
-        <div>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              setPage(0)
-              void loadDiscovered()
-            }}
+      <section className="refresh-strip">
+        <span className={`refresh-dot ${refresh?.state ?? 'idle'}`} />
+        <span>
+          <strong>
+            {refresh?.state === 'refreshing'
+              ? 'Refreshing your sources…'
+              : `Last refresh: ${relative(refresh?.lastCompletedAt ?? null)}`}
+          </strong>
+          {refresh?.result && (
+            <small>
+              {refresh.result.checked} checked · {refresh.result.created} new ·{' '}
+              {refresh.result.updated} updated · {refresh.result.unchanged}{' '}
+              unchanged
+            </small>
+          )}
+        </span>
+        <span className="enabled-sources">
+          Enabled:{' '}
+          {sources.length
+            ? sources
+                .map((source) =>
+                  source.display_name.replace(' (Greenhouse)', ''),
+                )
+                .join(', ')
+            : 'configured sources'}
+        </span>
+      </section>
+      {message && <p role="alert">{message}</p>}
+      <div className="search-bar">
+        <input
+          aria-label="Search opportunities"
+          type="search"
+          value={search}
+          onChange={(event) => change(setSearch, event.target.value)}
+          placeholder="Search roles, companies, skills, or locations"
+        />
+        <button
+          type="button"
+          className="button-ghost"
+          onClick={() => setAdvanced((value) => !value)}
+        >
+          {advanced ? 'Hide filters' : 'Filters'}
+        </button>
+      </div>
+      <div className="quick-filters">
+        <button
+          className={
+            !savedOnly && !appliedOnly && !locationText && !kind ? 'active' : ''
+          }
+          type="button"
+          onClick={clearAll}
+        >
+          All
+        </button>
+        <button
+          className={savedOnly ? 'active' : ''}
+          type="button"
+          onClick={() => {
+            setSavedOnly((value) => !value)
+            setPage(0)
+          }}
+        >
+          Saved
+        </button>
+        <button
+          className={appliedOnly ? 'active' : ''}
+          type="button"
+          onClick={() => {
+            setAppliedOnly((value) => !value)
+            setPage(0)
+          }}
+        >
+          Applied
+        </button>
+        {['Bremen', 'Hamburg'].map((city) => (
+          <button
+            className={locationText === city ? 'active' : ''}
+            type="button"
+            key={city}
+            onClick={() =>
+              change(setLocationText, locationText === city ? '' : city)
+            }
           >
-            <label htmlFor="opportunity-search">Search</label>
-            <input
-              id="opportunity-search"
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Title, organization, description, location"
-            />
-            <label htmlFor="opportunity-kind">Kind</label>
+            {city}
+          </button>
+        ))}
+        <button
+          className={remoteMode === 'remote' ? 'active' : ''}
+          type="button"
+          onClick={() =>
+            change(setRemoteMode, remoteMode === 'remote' ? '' : 'remote')
+          }
+        >
+          Remote
+        </button>
+        <button
+          className={kind === 'internship' ? 'active' : ''}
+          type="button"
+          onClick={() =>
+            change(setKind, kind === 'internship' ? '' : 'internship')
+          }
+        >
+          Internship
+        </button>
+        <button
+          className={kind === 'working_student' ? 'active' : ''}
+          type="button"
+          onClick={() =>
+            change(setKind, kind === 'working_student' ? '' : 'working_student')
+          }
+        >
+          Working student
+        </button>
+        <label className="sr-only">
+          <input
+            aria-label="Saved only"
+            type="checkbox"
+            checked={savedOnly}
+            onChange={(event) => {
+              setSavedOnly(event.target.checked)
+              setPage(0)
+            }}
+          />
+          Saved only
+        </label>
+        <label className="sr-only">
+          <input
+            aria-label="Show hidden"
+            type="checkbox"
+            checked={showHidden}
+            onChange={(event) => {
+              setShowHidden(event.target.checked)
+              setPage(0)
+            }}
+          />
+          Show hidden
+        </label>
+      </div>
+      <label className="sr-only">
+        Employment type
+        <select
+          value={employmentType}
+          onChange={(event) => change(setEmploymentType, event.target.value)}
+        >
+          <option value="">Any employment type</option>
+          {employmentTypeOptions.map((value) => (
+            <option key={value} value={value}>
+              {employmentTypeLabels[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {advanced && (
+        <div className="advanced-filters">
+          <label>
+            Kind
             <select
-              id="opportunity-kind"
               value={kind}
-              onChange={(event) => updateFilter(setKind, event.target.value)}
+              onChange={(event) => change(setKind, event.target.value)}
             >
               <option value="">Any kind</option>
               {opportunityKindOptions.map((value) => (
@@ -288,43 +476,42 @@ export function OpportunityListPage() {
                 </option>
               ))}
             </select>
-            <label htmlFor="employment-type">Employment type</label>
+          </label>
+          <label>
+            Employment
             <select
-              id="employment-type"
               value={employmentType}
               onChange={(event) =>
-                updateFilter(setEmploymentType, event.target.value)
+                change(setEmploymentType, event.target.value)
               }
             >
-              <option value="">Any employment type</option>
+              <option value="">Any type</option>
               {employmentTypeOptions.map((value) => (
                 <option key={value} value={value}>
                   {employmentTypeLabels[value]}
                 </option>
               ))}
             </select>
-            <label htmlFor="remote-mode">Remote mode</label>
+          </label>
+          <label>
+            Remote
             <select
-              id="remote-mode"
               value={remoteMode}
-              onChange={(event) =>
-                updateFilter(setRemoteMode, event.target.value)
-              }
+              onChange={(event) => change(setRemoteMode, event.target.value)}
             >
-              <option value="">Any remote mode</option>
+              <option value="">Any mode</option>
               {remoteModeOptions.map((value) => (
                 <option key={value} value={value}>
                   {remoteModeLabels[value]}
                 </option>
               ))}
             </select>
-            <label htmlFor="opportunity-source">Source</label>
+          </label>
+          <label>
+            Source
             <select
-              id="opportunity-source"
               value={sourceKey}
-              onChange={(event) =>
-                updateFilter(setSourceKey, event.target.value)
-              }
+              onChange={(event) => change(setSourceKey, event.target.value)}
             >
               <option value="">Any source</option>
               {sources.map((source) => (
@@ -333,259 +520,232 @@ export function OpportunityListPage() {
                 </option>
               ))}
             </select>
-            <label htmlFor="lifecycle-status">Status</label>
+          </label>
+          <label>
+            Lifecycle
             <select
-              id="lifecycle-status"
               value={lifecycleStatus}
               onChange={(event) =>
-                updateFilter(setLifecycleStatus, event.target.value)
+                change(setLifecycleStatus, event.target.value)
               }
             >
               <option value="">Any status</option>
               <option value="active">Active</option>
               <option value="stale">Stale</option>
               <option value="closed">Closed</option>
-              <option value="unknown">Unknown</option>
             </select>
-            <label htmlFor="opportunity-location">Location</label>
-            <input
-              id="opportunity-location"
-              type="text"
-              value={locationText}
-              onChange={(event) =>
-                updateFilter(setLocationText, event.target.value)
-              }
-              placeholder="e.g. Bremen"
-            />
-            {locationPresets.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className="secondary"
-                aria-pressed={locationText === preset}
-                onClick={() => {
-                  updateFilter(setLocationText, preset)
-                  void loadDiscovered()
-                }}
-              >
-                {preset}
-              </button>
-            ))}
-            <p>
-              Location matches plain text only -- there is no geocoding or
-              structured location normalization yet, so unusual spellings may
-              not match.
-            </p>
-            <label htmlFor="opportunity-sort">Sort</label>
+          </label>
+          <label>
+            Sort
             <select
-              id="opportunity-sort"
               value={sort}
-              onChange={(event) =>
+              onChange={(event) => {
                 setSort(event.target.value as OpportunitySort)
-              }
+                setPage(0)
+              }}
             >
               <option value="discovered_desc">Recently discovered</option>
               <option value="posted_desc">Recently posted</option>
               <option value="deadline_asc">Deadline soon</option>
-              <option value="organization_asc">Organization</option>
-              <option value="title_asc">Title</option>
+              <option value="organization_asc">Company</option>
             </select>
-            <button type="submit">Search</button>
-          </form>
-          <label htmlFor="show-hidden">
+          </label>
+          <label className="check-label">
             <input
-              id="show-hidden"
               type="checkbox"
               checked={showHidden}
-              onChange={(event) =>
-                updateFilter(setShowHidden, event.target.checked)
-              }
+              onChange={(event) => {
+                setShowHidden(event.target.checked)
+                setPage(0)
+              }}
             />{' '}
             Show hidden
           </label>
-          <label htmlFor="saved-only">
-            <input
-              id="saved-only"
-              type="checkbox"
-              checked={savedOnly}
-              onChange={(event) =>
-                updateFilter(setSavedOnly, event.target.checked)
-              }
-            />{' '}
-            Saved only
-          </label>
-          <label htmlFor="applied-only">
-            <input
-              id="applied-only"
-              type="checkbox"
-              checked={appliedOnly}
-              onChange={(event) =>
-                updateFilter(setAppliedOnly, event.target.checked)
-              }
-            />{' '}
-            Applied only
-          </label>
-
-          {discoveredStatus === 'loading' && <p>Loading…</p>}
-          {discoveredStatus === 'error' && (
-            <div>
-              <p role="alert">Opportunities could not be loaded.</p>
-              <button type="button" onClick={() => void loadDiscovered()}>
-                Retry
-              </button>
-            </div>
-          )}
-          {discoveredStatus === 'ready' && rows.length === 0 && (
-            <p>No opportunities match your filters.</p>
-          )}
-          {discoveredStatus === 'ready' && rows.length > 0 && (
-            <ul>
-              {rows.map((row) => {
-                const state = stateMap.get(row.opportunity_id)
-                const isSaved = Boolean(state?.saved_at)
-                const isHidden = Boolean(state?.hidden_at)
-                const isApplied = appliedOpportunityIds.has(row.opportunity_id)
-                return (
-                  <li key={row.opportunity_id}>
-                    <Link to={`/opportunities/${row.opportunity_id}`}>
-                      <strong>{row.title}</strong>
-                    </Link>{' '}
-                    at {row.organization}
-                    <br />
-                    <span>{row.source_display_name}</span> ·{' '}
-                    <span>{opportunityKindLabels[row.opportunity_kind]}</span> ·{' '}
-                    <span>{remoteModeLabels[row.remote_mode]}</span>
-                    {row.location_text && (
-                      <>
-                        {' '}
-                        · <span>{row.location_text}</span>
-                      </>
-                    )}
-                    <br />
-                    <span>
-                      Discovered {formatDate(row.first_discovered_at)}
-                    </span>
-                    {row.application_deadline && (
-                      <>
-                        {' '}
-                        ·{' '}
-                        <span>
-                          Deadline {formatDate(row.application_deadline)}
-                        </span>
-                      </>
-                    )}
-                    {row.lifecycle_status !== 'active' && (
-                      <>
-                        {' '}
-                        <span>({row.lifecycle_status})</span>
-                      </>
-                    )}
-                    {isSaved && <span> · Saved</span>}
-                    {isApplied && <span> · Applied</span>}
-                    {isHidden && <span> · Hidden</span>}
-                    <br />
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={pendingSave === row.opportunity_id}
-                      onClick={() => void toggleSave(row)}
-                    >
-                      {isSaved ? 'Unsave' : 'Save'}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={pendingSave === row.opportunity_id}
-                      onClick={() => void toggleHide(row)}
-                    >
-                      {isHidden ? 'Unhide' : 'Hide'}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-          <div>
-            <button
-              type="button"
-              className="secondary"
-              disabled={page === 0}
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-            >
-              Previous
-            </button>
-            <span>
-              {' '}
-              Page {page + 1} of {totalPages}{' '}
-            </span>
-            <button
-              type="button"
-              className="secondary"
-              disabled={page + 1 >= totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              Next
-            </button>
-          </div>
         </div>
       )}
-
-      {tab === 'manual' && (
-        <div>
-          <label htmlFor="show-dismissed">
-            <input
-              id="show-dismissed"
-              type="checkbox"
-              checked={showDismissed}
-              onChange={(event) => setShowDismissed(event.target.checked)}
-            />{' '}
-            Show hidden
-          </label>
-          {manualStatus === 'loading' && <p>Loading…</p>}
-          {manualStatus === 'error' && (
-            <div>
-              <p role="alert">Manual opportunities could not be loaded.</p>
-              <button type="button" onClick={() => void loadManual()}>
-                Retry
-              </button>
-            </div>
-          )}
-          {manualStatus === 'ready' && manualRows.length === 0 && (
+      {active.length > 0 && (
+        <div className="active-filters">
+          <span>Active filters</span>
+          {active.map((filter) => (
+            <button
+              className="filter-chip"
+              key={filter.label}
+              type="button"
+              onClick={filter.clear}
+            >
+              {filter.label} ×
+            </button>
+          ))}
+          <button className="button-ghost" type="button" onClick={clearAll}>
+            Clear all
+          </button>
+        </div>
+      )}
+      <div className="results-heading">
+        <span>
+          {total} result{total === 1 ? '' : 's'}
+        </span>
+        {manual.length > 0 && (
+          <Link to="/opportunities/import">
+            {manual.length} personal entry{manual.length === 1 ? '' : 'ies'}
+          </Link>
+        )}
+      </div>
+      {status === 'loading' && (
+        <div className="state-card">
+          <h2>Loading opportunities…</h2>
+          <span className="sr-only">Loading…</span>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="state-card error-state">
+          <h2>Opportunities could not be loaded</h2>
+          <p>Check that the local runtime is running, then try again.</p>
+          <button type="button" onClick={() => void load()}>
+            Retry
+          </button>
+        </div>
+      )}
+      {status === 'ready' &&
+        rows.length === 0 &&
+        (noRun ? (
+          <div className="state-card onboarding-state">
+            <p className="eyebrow">Start discovering</p>
+            <h2>No opportunities imported yet</h2>
             <p>
-              No manually added opportunities yet.{' '}
-              <Link to="/opportunities/import">Add one</Link>.
+              CareerOS can fetch roles from your configured sources and bring
+              them into one focused workspace.
             </p>
-          )}
-          {manualStatus === 'ready' && manualRows.length > 0 && (
-            <ul>
-              {manualRows.map((row) => (
-                <li key={row.id}>
-                  <Link to={`/opportunities/manual/${row.id}`}>
-                    <strong>{row.title}</strong>
-                  </Link>{' '}
-                  at {row.organization_name}
-                  <br />
-                  <span>Added by you</span> ·{' '}
-                  <span>{opportunityKindLabels[row.opportunity_kind]}</span>
-                  {row.location_text && (
-                    <>
-                      {' '}
-                      · <span>{row.location_text}</span>
-                    </>
+            <button
+              className="button-primary"
+              type="button"
+              onClick={() => void personalRuntime.refresh().then(setRefresh)}
+            >
+              Refresh opportunities
+            </button>
+            <small>
+              Enabled sources:{' '}
+              {sources.map((source) => source.display_name).join(', ') ||
+                'configured sources'}
+            </small>
+          </div>
+        ) : (
+          <div className="state-card">
+            <h2>No opportunities match your filters</h2>
+            <p>Try clearing a filter or expanding your search.</p>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={clearAll}
+            >
+              Clear filters
+            </button>
+          </div>
+        ))}
+      {status === 'ready' && rows.length > 0 && (
+        <div className="opportunity-grid">
+          {rows.map((row) => {
+            const state = stateMap.get(row.opportunity_id)
+            const saved = Boolean(state?.saved_at)
+            const applied = appliedIds.has(row.opportunity_id)
+            return (
+              <article className="opportunity-card" key={row.opportunity_id}>
+                <div className="card-topline">
+                  <span className="tag">
+                    {opportunityKindLabels[row.opportunity_kind]}
+                  </span>
+                  {row.application_deadline && (
+                    <span className="deadline">
+                      Deadline {formatDate(row.application_deadline)}
+                    </span>
                   )}
-                  {row.dismissed_at && <span> · Hidden</span>}
-                  <br />
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => void toggleDismiss(row)}
-                  >
-                    {row.dismissed_at ? 'Unhide' : 'Hide'}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                </div>
+                <Link to={`/opportunities/${row.opportunity_id}`}>
+                  <h2>{row.title}</h2>
+                </Link>
+                <p className="company-line">{row.organization}</p>
+                <div className="metadata">
+                  <span>{row.location_text ?? 'Location not listed'}</span>
+                  <span>{remoteModeLabels[row.remote_mode]}</span>
+                  <span>{row.source_display_name}</span>
+                </div>
+                <p className="description-preview">
+                  {preview(row.description)}
+                </p>
+                <footer>
+                  <span className="muted">
+                    Discovered {formatDate(row.first_discovered_at)}
+                  </span>
+                  <div className="card-actions">
+                    <button
+                      type="button"
+                      className={saved ? 'saved-action' : 'button-ghost'}
+                      disabled={pendingId === row.opportunity_id}
+                      onClick={() => void toggleSave(row)}
+                    >
+                      {saved ? 'Unsave' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-ghost"
+                      disabled={pendingId === row.opportunity_id}
+                      onClick={() => void toggleHide(row)}
+                    >
+                      {state?.hidden_at ? 'Unhide' : 'Hide'}
+                    </button>
+                    <Link to={`/opportunities/${row.opportunity_id}`}>
+                      {applied ? 'Application' : 'View'}
+                    </Link>
+                  </div>
+                </footer>
+              </article>
+            )
+          })}
+        </div>
+      )}
+      {total > PAGE_SIZE && (
+        <nav className="pagination" aria-label="Pagination">
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={page === 0}
+            onClick={() => setPage((current) => current - 1)}
+          >
+            Previous
+          </button>
+          <span>
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            type="button"
+            className="button-secondary"
+            disabled={page + 1 >= totalPages}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Next
+          </button>
+        </nav>
+      )}
+      {total <= PAGE_SIZE && (
+        <span className="sr-only">
+          Page {page + 1} of {totalPages}
+        </span>
+      )}
+      {tab === 'manual' && (
+        <div className="manual-results">
+          <ul>
+            {manual.map((entry) => (
+              <li key={entry.id}>
+                <Link to={`/opportunities/manual/${entry.id}`}>
+                  <h2>{entry.title}</h2>
+                </Link>
+                <p>
+                  {entry.organization_name} · {entry.location_text}
+                </p>
+                <span className="tag">Added by you</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
