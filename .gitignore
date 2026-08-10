@@ -19,6 +19,9 @@ dist/
 build/
 .vite/
 
+# Local-only Personal Mode state and generated credentials
+.careeros/
+
 # Supabase local/temporary state
 .supabase/
 supabase/.temp/

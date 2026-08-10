@@ -12,6 +12,15 @@ want exposed to anyone else, including a future second user of the same system.
 
 ## 2. Authentication
 
+**Local Personal Mode (Phase 2A corrective release)**: normal owner use does not display an
+authentication screen. `npm run personal` creates or reuses the local `dev-owner@careeros.local`
+Auth user and persists a generated, local-only password in gitignored runtime files. The Vite
+client uses that credential solely to acquire a regular, short-lived, RLS-scoped Supabase session;
+it never receives a service-role key. This is deliberately limited to the loopback local runtime,
+where it removes a repeated manual sign-in ceremony for the repository owner. Setting
+`VITE_PERSONAL_MODE` off restores the dormant public-auth UI for a future hosted deployment;
+the database ownership and RLS model is unchanged.
+
 **Implemented as of Phase 0**: Supabase Auth with email/password (magic link and OAuth/social
 login are not implemented — see [ADR-008](adr/ADR-008-private-first-multi-user-later.md) and
 [DEPLOYMENT_STRATEGY.md](DEPLOYMENT_STRATEGY.md) for why password auth was chosen). Signs in via

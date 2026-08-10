@@ -14,11 +14,13 @@ interface AuthContextValue {
   initError: string | null
   retryInit: () => void
   signOut: () => Promise<{ error: string | null }>
+  personalMode: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const personalMode = import.meta.env.VITE_PERSONAL_MODE === 'true'
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [initError, setInitError] = useState<string | null>(null)
@@ -27,26 +29,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
 
-    supabase.auth
-      .getSession()
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) {
-          setInitError('Could not check your sign-in status. Please try again.')
-          setLoading(false)
-          return
-        }
-        setSession(data.session)
-        setLoading(false)
-      })
-      .catch(() => {
-        if (!active) return
+    async function initialize() {
+      const { data, error } = await supabase.auth.getSession()
+      if (!active) return
+      if (error) {
         setInitError(
-          'Could not reach the authentication service. Please try again.',
+          'Could not check your local CareerOS session. Please try again.',
         )
         setLoading(false)
-      })
+        return
+      }
+      if (data.session || !personalMode) {
+        setSession(data.session)
+        setLoading(false)
+        return
+      }
+      const email = import.meta.env.VITE_PERSONAL_OWNER_EMAIL
+      const password = import.meta.env.VITE_PERSONAL_OWNER_PASSWORD
+      if (!email || !password) {
+        setInitError(
+          'Personal Mode is not ready. Run npm run personal from the repository root.',
+        )
+        setLoading(false)
+        return
+      }
+      const signIn = await supabase.auth.signInWithPassword({ email, password })
+      if (!active) return
+      if (signIn.error || !signIn.data.session) {
+        setInitError(
+          'Personal Mode could not connect to the local workspace. Run npm run personal and try again.',
+        )
+        setLoading(false)
+        return
+      }
+      setSession(signIn.data.session)
+      setLoading(false)
+    }
 
+    void initialize().catch(() => {
+      if (!active) return
+      setInitError(
+        'Could not reach the local CareerOS workspace. Please try again.',
+      )
+      setLoading(false)
+    })
+
+    /*
+     * Public authentication is intentionally left available for a later
+     * deployment. Personal Mode only establishes a local session invisibly.
+     */
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -57,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false
       subscription.unsubscribe()
     }
-  }, [retryCount])
+  }, [retryCount, personalMode])
 
   function retryInit() {
     setLoading(true)
@@ -66,13 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut(): Promise<{ error: string | null }> {
+    if (personalMode) return { error: null }
     const { error } = await supabase.auth.signOut()
     return { error: error ? 'Sign-out failed. Please try again.' : null }
   }
 
   return (
     <AuthContext.Provider
-      value={{ session, loading, initError, retryInit, signOut }}
+      value={{ session, loading, initError, retryInit, signOut, personalMode }}
     >
       {children}
     </AuthContext.Provider>

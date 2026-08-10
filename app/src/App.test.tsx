@@ -1,17 +1,20 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import App from './App'
 
 const mockGetSession = vi.fn()
 const mockOnAuthStateChange = vi.fn()
 const mockMaybeSingle = vi.fn()
+const mockSignInWithPassword = vi.fn()
 
 vi.mock('./lib/supabaseClient', () => ({
   supabase: {
     auth: {
       getSession: () => mockGetSession(),
       onAuthStateChange: (...args: unknown[]) => mockOnAuthStateChange(...args),
+      signInWithPassword: (...args: unknown[]) =>
+        mockSignInWithPassword(...args),
       signOut: vi.fn(),
     },
     from: () => ({
@@ -44,15 +47,22 @@ vi.mock('./lib/profileReviewRepository', () => ({
     state: () => Promise.resolve({ data: [], error: null }),
   },
 }))
+vi.mock('./pages/DashboardPage', () => ({
+  DashboardPage: () => <h1>Dashboard</h1>,
+}))
 
 describe('App', () => {
   beforeEach(() => {
+    vi.stubEnv('VITE_PERSONAL_MODE', 'false')
     mockGetSession.mockReset()
+    mockSignInWithPassword.mockReset()
     mockOnAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: vi.fn() } },
     })
     mockMaybeSingle.mockResolvedValue({ data: null, error: null })
   })
+
+  afterEach(() => vi.unstubAllEnvs())
 
   it('shows the sign-in screen when there is no session (unauthenticated state)', async () => {
     mockGetSession.mockResolvedValue({ data: { session: null } })
@@ -64,7 +74,7 @@ describe('App', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the profile screen when a session exists (authenticated state)', async () => {
+  it('shows the dashboard when a session exists (authenticated state)', async () => {
     mockGetSession.mockResolvedValue({
       data: { session: { user: { id: 'user-1' } } },
     })
@@ -72,8 +82,32 @@ describe('App', () => {
     render(<App />)
 
     expect(
-      await screen.findByRole('heading', { name: /your profile/i }),
+      await screen.findByRole('heading', { name: /dashboard/i }),
     ).toBeInTheDocument()
+  })
+
+  it('uses the local Personal Mode session without rendering a sign-in screen', async () => {
+    vi.stubEnv('VITE_PERSONAL_MODE', 'true')
+    vi.stubEnv('VITE_PERSONAL_OWNER_EMAIL', 'dev-owner@careeros.local')
+    vi.stubEnv('VITE_PERSONAL_OWNER_PASSWORD', 'local-only-password')
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null })
+    mockSignInWithPassword.mockResolvedValue({
+      data: { session: { user: { id: 'user-1' } } },
+      error: null,
+    })
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('heading', { name: /dashboard/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: /sign in/i }),
+    ).not.toBeInTheDocument()
+    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+      email: 'dev-owner@careeros.local',
+      password: 'local-only-password',
+    })
   })
 
   it('shows a retryable error instead of loading forever when session init returns an error', async () => {

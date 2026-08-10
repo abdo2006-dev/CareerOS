@@ -20,6 +20,16 @@ onboarded before a broader public launch.
 
 ### Local environment — implementation details (Phase 0)
 
+**Personal Mode runtime (Phase 2A corrective release)**: ordinary local use is `npm run personal`,
+not the multi-step developer path below. The launcher confirms Docker/Colima, starts Supabase if
+needed, applies pending migrations with `supabase migration up --local`, creates or reuses the
+local owner through the trusted Admin API, writes gitignored runtime env files, starts a
+loopback-only refresh companion, runs the existing local ingestion CLI, and starts Vite. It never
+uses `supabase db reset`, so it is safe to repeat without deleting personal data. The browser sees
+only the publishable key plus a local Personal Mode session credential; the service-role key stays
+in the companion/ingestion process. Public password authentication remains in the codebase but is
+not rendered while `VITE_PERSONAL_MODE=true`.
+
 - **Container runtime**: Colima (Docker CLI + Colima via Homebrew), not Docker Desktop — the
   lightweight open-source combination, chosen per explicit instruction. Started with
   `colima start --cpu 4 --memory 4 --disk 60` — an example allocation only; adjust the

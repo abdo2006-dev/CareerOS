@@ -21,6 +21,7 @@ import { PrivateOpportunityDetailPage } from './pages/PrivateOpportunityDetailPa
 import { ManualOpportunityFormPage } from './pages/ManualOpportunityFormPage'
 import { ApplicationsListPage } from './pages/ApplicationsListPage'
 import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
+import { DashboardPage } from './pages/DashboardPage'
 
 function AuthPending() {
   const { initError, loading, retryInit } = useAuth()
@@ -46,7 +47,7 @@ function AuthPending() {
 function RootRedirect() {
   const { session, loading, initError } = useAuth()
   if (loading || initError) return <AuthPending />
-  return <Navigate to={session ? '/profile' : '/sign-in'} replace />
+  return <Navigate to={session ? '/dashboard' : '/sign-in'} replace />
 }
 
 function RequireAuth() {
@@ -56,9 +57,10 @@ function RequireAuth() {
 }
 
 function SignInRoute() {
-  const { session, loading, initError } = useAuth()
+  const { session, loading, initError, personalMode } = useAuth()
   if (loading || initError) return <AuthPending />
-  return session ? <Navigate to="/profile" replace /> : <SignInPage />
+  if (personalMode || session) return <Navigate to="/dashboard" replace />
+  return <SignInPage />
 }
 
 function NotFoundPage() {
@@ -97,6 +99,7 @@ const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
+          { path: '/dashboard', element: <DashboardPage /> },
           {
             path: '/profile',
             element: <ProfileLayout />,
